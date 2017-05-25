@@ -1,0 +1,17 @@
+*.s#*
+*.b#*
+*.l#*
+.*.lck
+
+# Gerbers
+*.GTL
+*.GBL
+*.GTO
+*.GBO
+*.GTS
+*.GBS
+*.GML
+*.GTP
+*.dri
+*.gpi
+*.TXT
