@@ -3,7 +3,6 @@
 #![feature(struct_field_attributes)]
 #![no_std]
 
-#[macro_use]
 extern crate cortex_m;
 extern crate cortex_m_rt;
 extern crate stm32f103xx;
@@ -13,32 +12,21 @@ extern crate hd44780;
 #[macro_use]
 extern crate cortex_m_rtfm as rtfm;
 
-use rtfm::{Local, P0, P1, T0, T1, TMax};
+use rtfm::{P0, T0, TMax};
 use stm32f103xx::interrupt::Tim4;
-use stm32f103xx::{Gpioa, Gpiob, Syst};
+use stm32f103xx::{Gpioa};
+use hw::{gpio, delay, clock, lcd, led};
 
-mod clock;
-mod led;
 mod timer;
-mod hal;
-
-
-type GpioaLed = led::Led<Gpioa>;
-static LED: GpioaLed = GpioaLed::new(4, false);
+mod hw;
 
 type Tim4Timer = timer::Timer<stm32f103xx::Tim4>;
 static TIMER: Tim4Timer = Tim4Timer::new();
 
-
-type Lcd = hd44780::Lcd<hal::Display<'static>>;
-static LCD: Lcd = Lcd::new();
+static LCD: lcd::Lcd = lcd::Lcd::new();
+static LED: led::Led = led::Led::new();
 
 tasks!(stm32f103xx, {
-    tick: Task {
-        interrupt: Tim4,
-        priority: P1,
-        enabled: true,
-    },
 });
 
 peripherals!(stm32f103xx, {
@@ -60,11 +48,11 @@ peripherals!(stm32f103xx, {
     },
     GPIOA: Peripheral {
         register_block: Gpioa,
-        ceiling: C1,
+        ceiling: C0,
     },
     GPIOB: Peripheral {
         register_block: Gpiob,
-        ceiling: C1,
+        ceiling: C0,
     },
 });
 
@@ -75,55 +63,53 @@ fn init(ref priority: P0, threshold: &TMax) {
     let gpioa = GPIOA.access(priority, threshold);
     let gpiob = GPIOB.access(priority, threshold);
     let tim4 = TIM4.access(priority, threshold);
-    let hw = hal::Display::new(&gpiob);
 
     clock::setup(&rcc, &syst, &flash);
+
+    // FIXME: ...
     LED.init(&gpioa, &rcc);
-    LED.set(&gpioa, true);
+    /*rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
+    gpioa.crl.modify(|_, w| w.cnf4().push().mode4().output());
+    gpioa.crl.modify(|_, w| unsafe { w.bits(0b0110 << (4 * 4)) });*/
+
+
     TIMER.init(&tim4, &rcc);
 
-    //hal::delay_us(500000);
-
-    hw.init(&rcc);
-    let lcd = LCD.borrow(hw);
-
-    lcd.init();
-    lcd.display(hd44780::DisplayMode::DisplayOn, hd44780::DisplayCursor::CursorOff, hd44780::DisplayBlink::BlinkOff);
-    lcd.entry_mode(hd44780::EntryModeDirection::EntryRight, hd44780::EntryModeShift::NoShift);
-    lcd.position(0, 0);
-    lcd.print('H');
-    lcd.print('e');
-    lcd.print('l');
-    lcd.print('l');
-    lcd.print('o');
-
-    lcd.position(0, 1);
-    lcd.print('w');
-    lcd.print('o');
-    lcd.print('r');
-    lcd.print('l');
-    lcd.print('d');
-    lcd.print('!');
-
-    loop {
-        hal::delay_us(500000);
-        LED.set(&gpioa, true);
-
-        hal::delay_us(500000);
-        LED.set(&gpioa, false);
-    }
-
+    LCD.init(&gpiob, &rcc);
 }
 
 #[inline(never)]
 #[allow(dead_code)]
 #[used]
-fn idle(_priority: P0, _threshold: T0) -> ! {
+fn idle(priority: P0, threshold: T0) -> ! {
+    let syst = SYST.access(&priority, &threshold);
+    let gpioa = GPIOA.access(&priority, &threshold);
+    let gpiob = GPIOB.access(&priority, &threshold);
+    let lcd = LCD.materialize(&syst, &gpiob);
+    lcd.init();
+    lcd.display(hd44780::DisplayMode::DisplayOn, hd44780::DisplayCursor::CursorOff, hd44780::DisplayBlink::BlinkOff);
+    lcd.entry_mode(hd44780::EntryModeDirection::EntryRight, hd44780::EntryModeShift::NoShift);
+
+    // Need to wait at least 40ms after Vcc rises to 2.7V
+    // STM32 could start much earlier than that
+    ::delay::ms(&syst, 50);
+
+    lcd.position(0, 0);
+    lcd.print("Hello,");
+
+    lcd.position(0, 1);
+    lcd.print("World!!!");
+
     loop {
-        cortex_m::asm::nop();
+        LED.set(&gpioa, true);
+        delay::ms(&syst, 500);
+
+        LED.set(&gpioa, false);
+        delay::ms(&syst, 500);
     }
 }
 
+/*
 fn tick(mut task: Tim4, ref priority: P1, ref threshold: T1) {
     static STATE: Local<bool, Tim4> = Local::new(false);
     let gpioa = GPIOA.access(priority, threshold);
@@ -135,6 +121,7 @@ fn tick(mut task: Tim4, ref priority: P1, ref threshold: T1) {
         LED.set(&gpioa, *state);
     }
 }
+*/
 
 /*
 fn main() {

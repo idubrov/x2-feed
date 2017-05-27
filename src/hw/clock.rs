@@ -16,7 +16,6 @@ fn wait_condition<F>(syst: &Syst, f: F) -> bool
     true
 }
 
-
 /// Enables HSE oscillator (assumes 8Mhz crystal).
 /// Enables PLL with multiplier of 9 (72Mhz)
 /// Sets up SYSCLK to use PLL as a source
