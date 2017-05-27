@@ -3,6 +3,7 @@ pub mod clock;
 pub mod delay;
 pub mod lcd;
 pub mod led;
+pub mod encoder;
 
 use stm32f103xx::{Gpioa, Gpiob, Syst, Rcc};
 
@@ -15,3 +16,7 @@ static DATA: gpio::PinRange<Gpiob> = gpio::PinRange::new(12, 4);
 // LED
 static LED: gpio::PinRange<Gpioa> = gpio::PinRange::new(4, 1);
 
+// Encoder
+static BTN: gpio::PinRange<Gpioa> = gpio::PinRange::new(5, 1);
+static DT: gpio::PinRange<Gpioa> = gpio::PinRange::new(6, 1);
+static CLK: gpio::PinRange<Gpioa> = gpio::PinRange::new(7, 1);
