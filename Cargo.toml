@@ -13,15 +13,17 @@ path = "../stepgen/"
 
 [dependencies.cortex-m-rtfm]
 version = "0.1.0"
-path = "../../cortex-m-rtfm/"
+path = "../cortex-m-rtfm/"
 
 [dependencies.cortex-m-rt]
 features = ["panic-over-semihosting"]
 version = "0.2.1"
 
 [dependencies.stm32f103xx]
-optional = false
-path = "../../stm32f103xx/"
+path = "../stm32f103xx/"
+
+[dependencies.hd44780]
+path = "../hd44780/"
 
 [profile]
 

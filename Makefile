@@ -2,7 +2,7 @@ CARGO = xargo
 
 CARGO_OPTS =
 TARGET = thumbv7m-none-eabi
-NAME = blue-pill-blinky
+NAME = x2-feed
 
 all:
 	$(MAKE) build

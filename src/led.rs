@@ -27,7 +27,7 @@ impl<T> Led<T>
     pub fn init(&self, port: &T, rcc: &Rcc) {
         // Power up the relevant peripherals
         // FIXME: use port...
-        rcc.apb2enr.modify(|_, w| w.iopcen().enabled());
+        rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
 
         // Configure the pin PC13 as an output pin
         // Open-drain, 2Mhz
@@ -37,14 +37,14 @@ impl<T> Led<T>
         } else {
             port.crh.modify(|_, w| unsafe { w.bits(0b0110 << ((self.pin - 8) * 4)) });
         }
-        port.bsrr.write(|w| w.bs13().set());
+        port.bsrr.write(|w| w.bs4().set());
     }
 
     pub fn set(&self, port: &T, on: bool) {
         if on == self.on_is_high {
-            port.bsrr.write(|w| w.br13().reset());
+            port.bsrr.write(|w| w.bs4().set());
         } else {
-            port.bsrr.write(|w| w.bs13().set());
+            port.bsrr.write(|w| w.br4().reset());
         }
     }
 }
