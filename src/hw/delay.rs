@@ -19,3 +19,8 @@ pub fn ms(syst: &Syst, delay: u32) {
         us(syst, 1000);
     }
 }
+
+pub fn ns(syst: &Syst, delay: u32) {
+    // FIXME: !!!
+    us(syst, (delay + 999) / 1000);
+}
