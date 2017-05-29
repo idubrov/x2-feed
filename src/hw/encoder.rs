@@ -1,8 +1,5 @@
 use stm32f103xx::{Gpioa, Tim3, Rcc};
 
-//TIM3_BASE, GPIOA_BASE, GPIO_PIN_5, GPIO_PIN_6 | GPIO_PIN_7
-
-
 pub struct Encoder {}
 
 impl Encoder {

@@ -14,8 +14,8 @@ extern crate cortex_m_rtfm as rtfm;
 
 use rtfm::{P0, T0, TMax};
 use stm32f103xx::interrupt::Tim4;
-use stm32f103xx::{Gpioa};
-use hw::{gpio, delay, clock, lcd, led, encoder};
+use stm32f103xx::{Syst, Gpioa, Gpiob};
+use hw::{gpio, delay, clock, lcd, led, encoder, driver, ESTOP};
 
 mod timer;
 mod hw;
@@ -26,6 +26,7 @@ static TIMER: Tim4Timer = Tim4Timer::new();
 static LCD: lcd::Lcd = lcd::Lcd::new();
 static LED: led::Led = led::Led::new();
 static ENC: encoder::Encoder = encoder::Encoder::new();
+static DRIVER: driver::Driver = driver::Driver::new();
 
 tasks!(stm32f103xx, {
 });
@@ -41,6 +42,10 @@ peripherals!(stm32f103xx, {
     },
     FLASH: Peripheral {
         register_block: Flash,
+        ceiling: C0,
+    },
+    TIM1: Peripheral {
+        register_block: Tim1,
         ceiling: C0,
     },
     TIM3: Peripheral {
@@ -67,6 +72,7 @@ fn init(ref priority: P0, threshold: &TMax) {
     let flash = FLASH.access(priority, threshold);
     let gpioa = GPIOA.access(priority, threshold);
     let gpiob = GPIOB.access(priority, threshold);
+    let tim1 = TIM1.access(priority, threshold);
     let tim3 = TIM3.access(priority, threshold);
     let tim4 = TIM4.access(priority, threshold);
 
@@ -79,11 +85,22 @@ fn init(ref priority: P0, threshold: &TMax) {
     LCD.init(&gpiob, &rcc);
     ENC.init(&tim3, &gpioa, &rcc);
     ENC.set_limit(&tim3, 20);
+    DRIVER.init(&tim1, &gpioa, &rcc);
+
+    ::hw::DIR.set(&gpioa, 0);
 }
 
-#[inline(never)]
-#[allow(dead_code)]
-#[used]
+fn estop(syst: &Syst, lcd: &hd44780::HD44780<lcd::LcdHw>) -> ! {
+    ::delay::ms(syst, 1); // Wait till power is back to normal
+    lcd.position(0, 0);
+    lcd.print("*E-STOP*");
+    lcd.position(0, 1);
+    lcd.print("        ");
+    loop {
+        cortex_m::asm::nop();
+    }
+}
+
 fn idle(priority: P0, threshold: T0) -> ! {
     let syst = SYST.access(&priority, &threshold);
     let gpioa = GPIOA.access(&priority, &threshold);
@@ -98,16 +115,19 @@ fn idle(priority: P0, threshold: T0) -> ! {
     // STM32 could start much earlier than that
     ::delay::ms(&syst, 50);
 
-    lcd.position(0, 0);
-    lcd.print("Hello!");
-
     loop {
-        lcd.position(0, 1);
-        lcd.print(if gpioa.idr.read().idr5().is_set() { "1" } else { "0" });
-        lcd.print(if gpioa.idr.read().idr6().is_set() { "1" } else { "0" });
-        lcd.print(if gpioa.idr.read().idr7().is_set() { "1" } else { "0" });
+        lcd.position(0, 0);
+        lcd.print(if gpioa.idr.read().idr1().is_set() { "1" } else { "0" });
+        lcd.print(if gpioa.idr.read().idr2().is_set() { "1" } else { "0" });
+        lcd.print(if gpioa.idr.read().idr3().is_set() { "1" } else { "0" });
+        lcd.print(if gpiob.idr.read().idr0().is_set() { " 1" } else { " 0" });
 
-        lcd.write(' ' as u8);
+        lcd.position(0, 1);
+        if ESTOP.get(&gpiob) == 0 {
+            estop(&syst, &lcd);
+        }
+        lcd.print(if gpioa.idr.read().idr0().is_set() { "1 " } else { "0 " });
+
         let cnt = ENC.current(&tim3);
         let cnt0 = cnt % 10;
         let cnt1 = (cnt / 10) % 10;
@@ -115,5 +135,10 @@ fn idle(priority: P0, threshold: T0) -> ! {
         lcd.write((cnt2 as u8) + ('0' as u8));
         lcd.write((cnt1 as u8) + ('0' as u8));
         lcd.write((cnt0 as u8) + ('0' as u8));
+
+        /*::hw::delay::ms(&syst, 10);
+        ::hw::STEP.set(&gpioa, 0);
+        ::hw::delay::ms(&syst, 1);
+        ::hw::STEP.set(&gpioa, 1);*/
     }
 }

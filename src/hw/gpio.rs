@@ -28,4 +28,8 @@ impl<T> PinRange<T>
             ((!data & self.mask) as u32) << 16; // Clear '0's
         port.bsrr.write(|w| unsafe { w.bits(bits << self.shift) });
     }
+
+    pub fn get(&self, port: &T) -> u16 {
+        ((port.idr.read().bits() >> self.shift) as u16) & self.mask
+    }
 }
