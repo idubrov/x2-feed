@@ -1,4 +1,3 @@
-use stm32f103xx::Syst;
 use stepgen;
 
 use hw::driver::Driver;
@@ -91,17 +90,15 @@ impl Stepper {
         self.position
     }
 
-    fn set_direction(&mut self, syst: &Syst, driver: &Driver, dir: bool) {
-        ::hw::delay::ns(syst, ::hw::DIR_SETUP_NS);
+    fn set_direction(&mut self, driver: &Driver, dir: bool) {
         driver.set_direction(if self.reverse { dir } else { !dir });
         self.direction = dir;
-        ::hw::delay::ns(syst, ::hw::DIR_HOLD_NS);
     }
 
     /// Move to given position. Note that no new move commands will be accepted while stepper is
     /// running. However, other target parameter, target speed, could be changed any time.
     /// FIXME: technically, we can actually change target on the fly...
-    pub fn move_to(&mut self, syst: &Syst, driver: &Driver, target: i32) -> bool {
+    pub fn move_to(&mut self, driver: &Driver, target: i32) -> bool {
         if !driver.check_stopped() {
             return false;
         }
@@ -110,10 +107,10 @@ impl Stepper {
         let delta;
         if pos < target {
             delta = (target - pos) as u32;
-            self.set_direction(syst, driver, true);
+            self.set_direction(driver, true);
         } else if pos > target {
             delta = (pos - target) as u32;
-            self.set_direction(syst, driver, false);
+            self.set_direction(driver, false);
         } else {
             // Nothing to do!
             return true;

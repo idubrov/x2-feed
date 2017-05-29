@@ -5,8 +5,8 @@ use core::marker::PhantomData;
 
 pub struct PinRange<T> where T: Deref<Target=stm32f103xx::gpioa::RegisterBlock> + 'static {
     phantom: PhantomData<*const T>,
-    shift: u8,
-    mask: u16,
+    pub shift: u8,
+    pub mask: u16,
 }
 
 

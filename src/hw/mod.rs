@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub mod gpio;
 pub mod clock;
 pub mod delay;
@@ -6,6 +8,7 @@ pub mod led;
 pub mod encoder;
 pub mod driver;
 pub mod stepper;
+pub mod controls;
 
 extern crate stepgen;
 
@@ -43,10 +46,6 @@ const fn ns2ticks(ns: u32) -> u16 {
 }
 
 pub const STEP_PULSE_WIDTH_TICKS: u16 = ns2ticks(75);
-
-// FIXME: these are 0.1us, which is one instruction... FIXME: remove these!
-pub const DIR_SETUP_NS: u32 = 100; /* FIXME: ? */
-pub const DIR_HOLD_NS: u32 = 100;
 
 // Controls
 pub static LEFT: gpio::PinRange<Gpioa> = gpio::PinRange::new(1, 1);
