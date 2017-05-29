@@ -29,7 +29,8 @@ static LED: led::Led = led::Led::new();
 static ENC: encoder::Encoder = encoder::Encoder::new();
 static DRIVER: driver::DriverRef = driver::DriverRef::new();
 
-static STEPPER: Resource<RefCell<stepper::Stepper>, C4> = Resource::new(RefCell::new(stepper::Stepper::new()));
+static STEPPER: Resource<RefCell<stepper::Stepper>, C4> =
+    Resource::new(RefCell::new(stepper::Stepper::new()));
 
 tasks!(stm32f103xx, {
 step_completed: Task {
@@ -98,12 +99,14 @@ fn init(ref priority: P0, threshold: &TMax) {
     driver.release();
 
     let stepper = STEPPER.access(priority, threshold);
-    stepper.borrow_mut().reset();
-    stepper.borrow_mut().set_speed((4 * 200 * 16) << 8);
+    stepper.borrow_mut().set_acceleration((ACCELERATION * MICROSTEPS) << 8);
 }
 
 fn estop(syst: &Syst, lcd: &hd44780::HD44780<lcd::LcdHw>) -> ! {
     ::delay::ms(syst, 1); // Wait till power is back to normal
+
+    // Immediately disable driver outputs
+    ::hw::ENABLE.set(unsafe { &(*stm32f103xx::GPIOA.get()) }, 0);
     lcd.position(0, 0);
     lcd.print("*E-STOP*");
     lcd.position(0, 1);
@@ -113,36 +116,50 @@ fn estop(syst: &Syst, lcd: &hd44780::HD44780<lcd::LcdHw>) -> ! {
     }
 }
 
-fn stepper_command<CB>(priority: &P0, threshold: &T0, cb: CB)
+fn stepper_command<T, CB>(priority: &P0, threshold: &T0, cb: CB) -> T
     where
-        CB: FnOnce(core::cell::RefMut<stepper::Stepper>, &driver::Driver) {
+        CB: for<'a> FnOnce(core::cell::RefMut<'a, stepper::Stepper>, &driver::Driver) -> T {
     threshold.raise(
         &STEPPER, |threshold| {
             let gpioa = GPIOA.access(priority, threshold);
             let tim1 = TIM1.access(priority, threshold);
             let driver = DRIVER.materialize(&tim1, &gpioa);
             let stepper = STEPPER.access(priority, threshold);
-            cb(stepper.borrow_mut(), &driver);
+            let result = cb(stepper.borrow_mut(), &driver);
+            result
         }
-    );
+    )
+}
+
+#[derive(Clone, Copy)]
+enum RunState {
+    Stopped,
+    Stopping,
+    Running
+}
+
+
+const PITCH: u32 = 16;
+const MICROSTEPS: u32 = 16;
+const MAX_IPM: u16 = 30;
+const ACCELERATION: u32 = 1200; // Steps per second per second
+const STEPS_PER_ROTATION: u32 = 200;
+
+struct State {
+    run_state: RunState,
+    fast: bool,
+    speed: u32,
+    slow_ipm: u16,
+    fast_ipm: u16
 }
 
 fn idle(priority: P0, threshold: T0) -> ! {
-    let ipm = 10;
-    let pitch = 16;
-    let microsteps = 16;
-    let slow_speed = (ipm * pitch * 200 * microsteps / 60) << 8;
-    let fast_speed = slow_speed * 3;
-
     let syst = SYST.access(&priority, &threshold);
     // FIXME: ..
     let gpioa = unsafe { &(*stm32f103xx::GPIOA.get()) }; //GPIOA.access(&priority, &threshold);
-    let tim1 = unsafe { & (*stm32f103xx::TIM1.get()) };
     let gpiob = GPIOB.access(&priority, &threshold);
     let tim3 = TIM3.access(&priority, &threshold);
     let lcd = LCD.materialize(&syst, &gpiob);
-    let mut was_moving = false;
-    let mut last_speed = 0;
     lcd.init();
     lcd.display(hd44780::DisplayMode::DisplayOn, hd44780::DisplayCursor::CursorOff, hd44780::DisplayBlink::BlinkOff);
     lcd.entry_mode(hd44780::EntryModeDirection::EntryRight, hd44780::EntryModeShift::NoShift);
@@ -151,71 +168,92 @@ fn idle(priority: P0, threshold: T0) -> ! {
     // STM32 could start much earlier than that
     ::delay::ms(&syst, 50);
 
+
+    let mut state = State {
+        run_state: RunState::Stopped,
+        fast: false,
+        speed: 0,
+        // Offset by 1, as IPM of 0 is not allowed.
+        slow_ipm: 10 - 1,
+        fast_ipm: 30 - 1,
+    };
+    ENC.set_current(&tim3, state.slow_ipm);
+    ENC.set_limit(&tim3, MAX_IPM);
     loop {
+        if ESTOP.get(&gpiob) == 0 {
+            estop(&syst, &lcd);
+        }
+
         lcd.position(0, 0);
 
         let left = ::hw::LEFT.get(&gpioa) == 1;
         let right = ::hw::RIGHT.get(&gpioa) == 1;
         let fast = ::hw::FAST.get(&gpioa) == 1;
 
-        let speed = if fast { fast_speed } else { slow_speed };
-        if last_speed != speed {
-            stepper_command(&priority, &threshold, |mut s, d| { s.set_speed(speed); });
-            last_speed = speed;
-        }
+        let mut ipm = ENC.current(&tim3);
+        match (state.fast, fast) {
+            (false, true) => {
+                // Switch to fast IPM
+                state.slow_ipm = ipm;
+                ipm = state.fast_ipm;
+                ENC.set_current(&tim3, ipm);
+                state.fast = true;
+            }
 
-        match (was_moving, left, right) {
-            (false, true, false) => {
-                stepper_command(&priority, &threshold, |mut s, d| { s.move_to(&syst, d, -1000000000); });
-                was_moving = true;
-            },
-
-            (false, false, true) => {
-                stepper_command(&priority, &threshold, |mut s, d| { s.move_to(&syst, d, 1000000000); });
-                was_moving = true;
-            },
-
-            (true, false, false) => {
-                stepper_command(&priority, &threshold, |mut s, _| s.stop());
-                // FIXME: should wait till stopped!
-                was_moving = false;
-            },
+            (true, false) => {
+                // Switch to slow IPM
+                state.fast_ipm = ipm;
+                ipm = state.slow_ipm;
+                ENC.set_current(&tim3, ipm);
+                state.fast = false;
+            }
 
             _ => {}
         }
 
-        lcd.print(if gpioa.idr.read().idr1().is_set() { "1" } else { "0" });
-        lcd.print(if gpioa.idr.read().idr2().is_set() { "1" } else { "0" });
-        lcd.print(if gpioa.idr.read().idr3().is_set() { "1" } else { "0" });
+        // Update stepper speed based on current setting
+        // FIXME: divide after shift?
+        let speed = ((((ipm + 1) << 8) as u32) * PITCH * STEPS_PER_ROTATION * MICROSTEPS) / 60;
+        if state.speed != speed {
+            stepper_command(&priority, &threshold, |mut s, _| { s.set_speed(speed); });
+            state.speed = speed;
+        }
 
+        match (state.run_state, left, right) {
+            (RunState::Stopped, true, false) => {
+                stepper_command(&priority, &threshold, |mut s, d| { s.move_to(&syst, d, -1000000000); });
+                state.run_state = RunState::Running;
+            }
 
-        lcd.print(if was_moving { "1" } else { "0" });
-        lcd.print(if left { "1" } else { "0" });
-        lcd.print(if right { "1" } else { "0" });
+            (RunState::Stopped, false, true) => {
+                stepper_command(&priority, &threshold, |mut s, d| { s.move_to(&syst, d, 1000000000); });
+                state.run_state = RunState::Running;
+            }
 
+            (RunState::Running, false, false) => {
+                stepper_command(&priority, &threshold, |mut s, _| s.stop());
+                state.run_state = RunState::Stopping;
+            }
+
+            (RunState::Stopping, _, _) => {
+                if stepper_command(&priority, &threshold, |mut s, d| s.is_stopped(d)) {
+                    state.run_state = RunState::Stopped;
+                }
+            }
+
+            _ => {}
+        }
 
         lcd.position(0, 1);
-        if ESTOP.get(&gpiob) == 0 {
-            estop(&syst, &lcd);
+        let ipm0 = (ipm + 1) % 10;
+        let ipm1 = ((ipm + 1) / 10) % 10;
+        lcd.write((ipm1 as u8) + ('0' as u8));
+        lcd.write((ipm0 as u8) + ('0' as u8));
+        if state.fast {
+            lcd.print(" FIPM");
+        } else {
+            lcd.print(" IPM ");
         }
-        //lcd.print(if gpioa.idr.read().idr0().is_set() { "1 " } else { "0 " });
-
-        let cnt = ENC.current(&tim3);
-        let cnt0 = cnt % 10;
-        let cnt1 = (cnt / 10) % 10;
-        let cnt2 = (cnt / 100) % 10;
-        lcd.write((cnt2 as u8) + ('0' as u8));
-        lcd.write((cnt1 as u8) + ('0' as u8));
-        lcd.write((cnt0 as u8) + ('0' as u8));
-
-        lcd.write(' ' as u8);
-        let cnt = tim1.cnt.read().bits();
-        let cnt0 = cnt % 10;
-        let cnt1 = (cnt / 10) % 10;
-        let cnt2 = (cnt / 100) % 10;
-        lcd.write((cnt2 as u8) + ('0' as u8));
-        lcd.write((cnt1 as u8) + ('0' as u8));
-        lcd.write((cnt0 as u8) + ('0' as u8));
     }
 }
 

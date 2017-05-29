@@ -43,4 +43,8 @@ impl Encoder {
     pub fn current(&self, tim3: &Tim3) -> u16{
         tim3.cnt.read().cnt().bits() / 2
     }
+
+    pub fn set_current(&self, tim3: &Tim3, pos: u16) {
+        tim3.cnt.write(|w| w.cnt().bits(pos * 2));
+    }
 }

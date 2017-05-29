@@ -22,7 +22,7 @@ pub struct Stepper {
 impl Stepper {
     pub const fn new() -> Stepper {
         Stepper {
-            reverse: false,
+            reverse: true,
             stepgen: stepgen::Stepgen::new(::hw::TICK_FREQUENCY),
             direction: true,
             base_step: 0,
@@ -31,13 +31,17 @@ impl Stepper {
         }
     }
 
+    /// Set new acceleration (steps per second per second), in 24.8 format.
+    pub fn set_acceleration(&mut self, acceleration: u32) {
+        self.stepgen.set_acceleration(acceleration)
+    }
 
-    /// Initialize step generation
-    pub fn reset(&mut self) {
-        // FIXME: params...
-        let accel = 1200;
-        let microsteps = 16;
-        self.stepgen.set_acceleration((accel * microsteps) << 8);
+    /// Set slew speed (maximum speed stepper motor would run). Note that stepper motor would only
+    /// reach this speed if target step is far enough, so there is enough time for deceleration.
+    /// FIXME: no Javadoc!
+    /// @param speed target slew speed to reach, in steps per second, 24.8 format
+    pub fn set_speed(&mut self, speed: u32) {
+        self.stepgen.set_target_speed(speed);
     }
 
     fn load_delay(&mut self, driver: &Driver) -> u32 {
@@ -137,15 +141,12 @@ impl Stepper {
         return true;
     }
 
-    /// Set slew speed (maximum speed stepper motor would run). Note that stepper motor would only
-    /// reach this speed if target step is far enough, so there is enough time for deceleration.
-    /// FIXME: no Javadoc!
-    /// @param speed target slew speed to reach, in steps per second, 24.8 format
-    pub fn set_speed(&mut self, speed: u32) {
-        self.stepgen.set_target_speed(speed);
-    }
 
     pub fn stop(&mut self) {
         self.stop_requested = true;
+    }
+
+    pub fn is_stopped(&self, driver: &Driver) -> bool {
+        driver.check_stopped()
     }
 }
