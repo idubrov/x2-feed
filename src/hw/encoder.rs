@@ -32,7 +32,6 @@ impl Encoder {
                 (0b1111 << 12 /* Input capture 2 filter */))
         });
 
-        //tim3.arr.write(|w| w.arr().bits(999));
         tim3.cr1.write(|w| w.cen().enabled());
     }
 

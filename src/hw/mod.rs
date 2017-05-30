@@ -9,10 +9,13 @@ pub mod encoder;
 pub mod driver;
 pub mod stepper;
 pub mod controls;
+pub mod hall;
 
 extern crate stepgen;
 
 use stm32f103xx::{Gpioa, Gpiob};
+
+pub const FREQUENCY: u32 = 72_000_000;
 
 // LCD
 pub static RS: gpio::PinRange<Gpiob> = gpio::PinRange::new(1, 1);
@@ -37,11 +40,10 @@ pub static DIR: gpio::PinRange<Gpioa> = gpio::PinRange::new(9, 1);
 pub static ENABLE: gpio::PinRange<Gpioa> = gpio::PinRange::new(10, 1);
 pub static RESET: gpio::PinRange<Gpioa> = gpio::PinRange::new(11, 1);
 
-pub const FREQUENCY: u32 = 72_000_000;
-pub const TICK_FREQUENCY: u32 = 1_000_000; // 1us timer resolution
+pub const DRIVER_TICK_FREQUENCY: u32 = 1_000_000; // 1us timer resolution
 
 const fn ns2ticks(ns: u32) -> u16 {
-    const NANOS_IN_TICK: u32 = 1000000000 / TICK_FREQUENCY;
+    const NANOS_IN_TICK: u32 = 1000000000 / DRIVER_TICK_FREQUENCY;
     return ((ns + NANOS_IN_TICK - 1) / NANOS_IN_TICK) as u16;
 }
 
@@ -51,3 +53,10 @@ pub const STEP_PULSE_WIDTH_TICKS: u16 = ns2ticks(75);
 pub static LEFT: gpio::PinRange<Gpioa> = gpio::PinRange::new(1, 1);
 pub static RIGHT: gpio::PinRange<Gpioa> = gpio::PinRange::new(2, 1);
 pub static FAST: gpio::PinRange<Gpioa> = gpio::PinRange::new(3, 1);
+
+// Hall
+const HALL_TICK_FREQUENCY: u32 = 100000; // 0.01 ms
+const HALL_MAX_RPM: u32 = 6000;
+const HALL_MIN_RPM: u32 = 50;
+
+pub static HALL: gpio::PinRange<Gpioa> = gpio::PinRange::new(0, 1);

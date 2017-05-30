@@ -12,13 +12,14 @@ extern crate hd44780;
 #[macro_use]
 extern crate cortex_m_rtfm as rtfm;
 
-use rtfm::{P0, P4, T0, C4, T4, TMax, Resource};
-use stm32f103xx::interrupt::Tim1UpTim10;
+use rtfm::{P0, P2, P4, C2, C4, T0, T2, T4, TMax, Resource};
+use stm32f103xx::interrupt::{Tim2, Tim1UpTim10};
 use stm32f103xx::{Syst};
-use hw::{delay, clock, lcd, led, encoder, driver, stepper, controls, ESTOP};
+use hw::{delay, clock, lcd, led, encoder, driver, stepper, controls, hall, ESTOP};
 use core::cell::RefCell;
 
 mod hw;
+mod print;
 
 static LCD: lcd::Lcd = lcd::Lcd::new();
 static LED: led::Led = led::Led::new();
@@ -29,10 +30,18 @@ static CONTROLS: controls::Controls = controls::Controls::new();
 static STEPPER: Resource<RefCell<stepper::Stepper>, C4> =
     Resource::new(RefCell::new(stepper::Stepper::new()));
 
+static HALL: Resource<RefCell<hall::Hall>, C2> =
+    Resource::new(RefCell::new(hall::Hall::new()));
+
 tasks!(stm32f103xx, {
-step_completed: Task {
+    step_completed: Task {
         interrupt: Tim1UpTim10,
         priority: P4,
+        enabled: true,
+    },
+    hall_interrupt: Task {
+        interrupt: Tim2,
+        priority: P2,
         enabled: true,
     },
 });
@@ -53,6 +62,10 @@ peripherals!(stm32f103xx, {
     TIM1: Peripheral {
         register_block: Tim1,
         ceiling: C4,
+    },
+    TIM2: Peripheral {
+        register_block: Tim2,
+        ceiling: C2,
     },
     TIM3: Peripheral {
         register_block: Tim3,
@@ -75,8 +88,10 @@ fn init(ref priority: P0, threshold: &TMax) {
     let gpioa = GPIOA.access(priority, threshold);
     let gpiob = GPIOB.access(priority, threshold);
     let tim1 = TIM1.access(priority, threshold);
+    let tim2 = TIM2.access(priority, threshold);
     let tim3 = TIM3.access(priority, threshold);
     let driver = DRIVER.materialize(&tim1, &gpioa);
+    let hall = HALL.access(priority, threshold);
 
     clock::setup(&rcc, &syst, &flash);
 
@@ -85,6 +100,7 @@ fn init(ref priority: P0, threshold: &TMax) {
     LCD.init(&gpiob, &rcc);
     ENC.init(&tim3, &gpioa, &rcc);
     CONTROLS.init(&gpioa, &rcc);
+    hall.borrow_mut().init(&tim2, &gpioa, &rcc);
 
     driver.init(&rcc);
     driver.release();
@@ -156,7 +172,6 @@ fn idle(priority: P0, threshold: T0) -> ! {
     // STM32 could start much earlier than that
     ::delay::ms(&syst, 50);
 
-
     let mut state = State {
         run_state: RunState::Stopped,
         fast: false,
@@ -173,6 +188,15 @@ fn idle(priority: P0, threshold: T0) -> ! {
         }
 
         lcd.position(0, 0);
+        let rpm = threshold.raise(
+            &HALL, |threshold| {
+                let hall = HALL.access(&priority, threshold);
+                let rpm = hall.borrow().rpm();
+                rpm
+            }
+        );
+        print::print_formatted(&lcd, rpm, print::Alignment::Right, 4);
+        lcd.print(" RPM");
 
         let input = CONTROLS.get();
         let ipm = handle_ipm(&mut state, input, &priority, &threshold);
@@ -203,10 +227,7 @@ fn idle(priority: P0, threshold: T0) -> ! {
         }
 
         lcd.position(0, 1);
-        let ipm0 = (ipm + 1) % 10;
-        let ipm1 = ((ipm + 1) / 10) % 10;
-        lcd.write((ipm1 as u8) + ('0' as u8));
-        lcd.write((ipm0 as u8) + ('0' as u8));
+        print::print_formatted(&lcd, ipm as u32, print::Alignment::Right, 4);
         if state.fast {
             lcd.print(" FIPM");
         } else {
@@ -258,4 +279,10 @@ fn step_completed(mut _task: Tim1UpTim10, ref priority: P4, ref threshold: T4) {
         tim1.sr.modify(|_, w| w.uif().clear());
         stepper.borrow_mut().step_completed(&driver);
     }
+}
+
+fn hall_interrupt(mut _task: Tim2, ref priority: P2, ref threshold: T2) {
+    let tim2 = TIM2.access(priority, threshold);
+    let hall = HALL.access(priority, threshold);
+    hall.borrow_mut().interrupt(&tim2);
 }

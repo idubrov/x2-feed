@@ -19,7 +19,6 @@ impl Controls {
     pub fn init(&self, gpioa: &Gpioa, rcc: &Rcc) {
         rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
 
-        // Defaults are fine (Hi-Z input)
         gpioa.crl.write(|w| w
             // open == 01 == floating input
             .mode1().input().cnf1().open()

@@ -43,7 +43,7 @@ impl<'a> Driver<'a> {
             .mode11().output50().cnf11().open());
 
         // Prescaler
-        tim1.psc.write(|w| w.psc().bits(((::hw::FREQUENCY / ::hw::TICK_FREQUENCY) - 1) as u16));
+        tim1.psc.write(|w| w.psc().bits(((::hw::FREQUENCY / ::hw::DRIVER_TICK_FREQUENCY) - 1) as u16));
 
         // Initialize timer
         tim1.cr1.write(|w| w

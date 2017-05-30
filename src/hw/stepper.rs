@@ -22,7 +22,7 @@ impl Stepper {
     pub const fn new() -> Stepper {
         Stepper {
             reverse: true,
-            stepgen: stepgen::Stepgen::new(::hw::TICK_FREQUENCY),
+            stepgen: stepgen::Stepgen::new(::hw::DRIVER_TICK_FREQUENCY),
             direction: true,
             base_step: 0,
             position: 0,
