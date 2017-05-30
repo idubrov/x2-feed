@@ -200,7 +200,7 @@ fn idle(priority: P0, threshold: T0) -> ! {
         lcd.print(" RPM");
 
         lcd.position(0, 1);
-        print::print_formatted(&lcd, ipm as u32, print::Alignment::Right, 4);
+        print::print_formatted(&lcd, (ipm + 1) as u32, print::Alignment::Right, 4);
         if state.fast {
             lcd.print(" FIPM");
         } else {
