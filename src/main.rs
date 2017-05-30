@@ -156,7 +156,8 @@ struct State {
     fast: bool,
     speed: u32,
     slow_ipm: u16,
-    fast_ipm: u16
+    fast_ipm: u16,
+    rpm: u32,
 }
 
 fn idle(priority: P0, threshold: T0) -> ! {
@@ -179,6 +180,7 @@ fn idle(priority: P0, threshold: T0) -> ! {
         // Offset by 1, as IPM of 0 is not allowed.
         slow_ipm: 10 - 1,
         fast_ipm: 30 - 1,
+        rpm: 0,
     };
     ENC.set_current(&tim3, state.slow_ipm);
     ENC.set_limit(&tim3, MAX_IPM);
@@ -187,44 +189,15 @@ fn idle(priority: P0, threshold: T0) -> ! {
             estop(&syst, &lcd);
         }
 
-        lcd.position(0, 0);
-        let rpm = threshold.raise(
-            &HALL, |threshold| {
-                let hall = HALL.access(&priority, threshold);
-                let rpm = hall.borrow().rpm();
-                rpm
-            }
-        );
-        print::print_formatted(&lcd, rpm, print::Alignment::Right, 4);
-        lcd.print(" RPM");
-
         let input = CONTROLS.get();
         let ipm = handle_ipm(&mut state, input, &priority, &threshold);
+        handle_feed(&mut state, input, &priority, &threshold);
+        handle_rpm(&mut state, &priority, &threshold);
 
-        match (state.run_state, input.left, input.right) {
-            (RunState::Stopped, true, false) => {
-                stepper_command(&priority, &threshold, |mut s, d| { s.move_to(d, -1000000000); });
-                state.run_state = RunState::Running;
-            }
-
-            (RunState::Stopped, false, true) => {
-                stepper_command(&priority, &threshold, |mut s, d| { s.move_to(d, 1000000000); });
-                state.run_state = RunState::Running;
-            }
-
-            (RunState::Running, false, false) => {
-                stepper_command(&priority, &threshold, |mut s, _| s.stop());
-                state.run_state = RunState::Stopping;
-            }
-
-            (RunState::Stopping, _, _) => {
-                if stepper_command(&priority, &threshold, |s, d| s.is_stopped(d)) {
-                    state.run_state = RunState::Stopped;
-                }
-            }
-
-            _ => {}
-        }
+        lcd.position(0, 0);
+        // Print rounded RPM
+        print::print_formatted(&lcd, (state.rpm + 128) >> 8, print::Alignment::Right, 4);
+        lcd.print(" RPM");
 
         lcd.position(0, 1);
         print::print_formatted(&lcd, ipm as u32, print::Alignment::Right, 4);
@@ -267,6 +240,47 @@ fn handle_ipm(state: &mut State, input: controls::State, priority: &P0, threshol
         state.speed = speed;
     }
     ipm
+}
+
+fn handle_feed(state: &mut State, input: controls::State, priority: &P0, threshold: &T0) {
+    match (state.run_state, input.left, input.right) {
+        (RunState::Stopped, true, false) => {
+            stepper_command(&priority, &threshold, |mut s, d| { s.move_to(d, -1000000000); });
+            state.run_state = RunState::Running;
+        }
+
+        (RunState::Stopped, false, true) => {
+            stepper_command(&priority, &threshold, |mut s, d| { s.move_to(d, 1000000000); });
+            state.run_state = RunState::Running;
+        }
+
+        (RunState::Running, false, false) => {
+            stepper_command(&priority, &threshold, |mut s, _| s.stop());
+            state.run_state = RunState::Stopping;
+        }
+
+        (RunState::Stopping, _, _) => {
+            if stepper_command(&priority, &threshold, |s, d| s.is_stopped(d)) {
+                state.run_state = RunState::Stopped;
+            }
+        }
+
+        _ => {}
+    }
+}
+
+fn handle_rpm(state: &mut State, priority: &P0, threshold: &T0) {
+    let rpm = threshold.raise(
+        &HALL, |threshold| {
+            let hall = HALL.access(&priority, threshold);
+            let rpm = hall.borrow().rpm();
+            rpm
+        }
+    );
+    // Only capture if difference is big enough (more than .5%)
+    if state.rpm == 0 || rpm * 200 > state.rpm * 201 || rpm * 200 < state.rpm * 199 {
+        state.rpm = rpm;
+    }
 }
 
 fn step_completed(mut _task: Tim1UpTim10, ref priority: P4, ref threshold: T4) {

@@ -99,11 +99,8 @@ impl Hall {
         }
     }
 
-    pub fn captured(&self) -> u32 {
-        self.captured
-    }
-
+    /// Get latest captured RMP, in 24.8 format
     pub fn rpm(&self) -> u32 {
-        if self.captured != 0 { 60 * ::hw::HALL_TICK_FREQUENCY / self.captured } else { 0 }
+        if self.captured != 0 { (60 * ::hw::HALL_TICK_FREQUENCY << 8) / self.captured } else { 0 }
     }
 }
