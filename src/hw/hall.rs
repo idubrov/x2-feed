@@ -48,11 +48,10 @@ impl Hall {
             .cc1e().set());
 
         // FIXME: make trigger safe!
-        tim2.smcr.write(|w| unsafe { w
+        tim2.smcr.write(|w| w
             .sms().reset()
             // Filtered Timer Input 1 (TI1FP1)
-            .ts().bits(0b101) });
-
+            .ts().ti1fp1());
 
         tim2.dier.write(|w| w
             .uie().set()

@@ -1,5 +1,13 @@
 use stm32f103xx::{Gpioa, Tim1, Rcc};
 
+const fn ns2ticks(ns: u32) -> u16 {
+    const NANOS_IN_SECOND: u32 = 1000000000 / ::hw::DRIVER_TICK_FREQUENCY;
+    return ((ns + NANOS_IN_SECOND - 1) / NANOS_IN_SECOND) as u16;
+}
+
+const STEP_PULSE_WIDTH_TICKS: u16 = ns2ticks(75);
+
+
 pub struct DriverRef {
 }
 
@@ -131,8 +139,8 @@ impl<'a> Driver<'a> {
         // FIXME: delay could be 0?
         self.tim1.arr.write(|w| w.arr().bits(delay - 1));
 
-        if delay >= ::hw::STEP_PULSE_WIDTH_TICKS {
-            self.tim1.ccr1.write(|w| w.ccr1().bits(delay - ::hw::STEP_PULSE_WIDTH_TICKS));
+        if delay >= STEP_PULSE_WIDTH_TICKS {
+            self.tim1.ccr1.write(|w| w.ccr1().bits(delay - STEP_PULSE_WIDTH_TICKS));
         } else {
             self.tim1.ccr1.write(|w| w.ccr1().bits(0));
         }

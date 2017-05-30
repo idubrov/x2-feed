@@ -18,45 +18,40 @@ use stm32f103xx::{Gpioa, Gpiob};
 pub const FREQUENCY: u32 = 72_000_000;
 
 // LCD
-pub static RS: gpio::PinRange<Gpiob> = gpio::PinRange::new(1, 1);
-pub static RW: gpio::PinRange<Gpiob> = gpio::PinRange::new(10, 1);
-pub static E: gpio::PinRange<Gpiob> = gpio::PinRange::new(11, 1);
-pub static DATA: gpio::PinRange<Gpiob> = gpio::PinRange::new(12, 4);
+pub const RS: gpio::PinRange<Gpiob> = gpio::PinRange::new(1, 1);
+pub const RW: gpio::PinRange<Gpiob> = gpio::PinRange::new(10, 1);
+pub const E: gpio::PinRange<Gpiob> = gpio::PinRange::new(11, 1);
+pub const DATA: gpio::PinRange<Gpiob> = gpio::PinRange::new(12, 4);
 
 // LED
-pub static LED: gpio::PinRange<Gpioa> = gpio::PinRange::new(4, 1);
+pub const LED: gpio::PinRange<Gpioa> = gpio::PinRange::new(4, 1);
 
 // Encoder
-pub static BTN: gpio::PinRange<Gpioa> = gpio::PinRange::new(5, 1);
-pub static DT: gpio::PinRange<Gpioa> = gpio::PinRange::new(6, 1);
-pub static CLK: gpio::PinRange<Gpioa> = gpio::PinRange::new(7, 1);
+pub const BTN: gpio::PinRange<Gpioa> = gpio::PinRange::new(5, 1);
+pub const DT: gpio::PinRange<Gpioa> = gpio::PinRange::new(6, 1);
+pub const CLK: gpio::PinRange<Gpioa> = gpio::PinRange::new(7, 1);
 
 // Emergency stop
-pub static ESTOP: gpio::PinRange<Gpiob> = gpio::PinRange::new(0, 1);
+pub const ESTOP: gpio::PinRange<Gpiob> = gpio::PinRange::new(0, 1);
 
 // Stepper driver
-pub static STEP: gpio::PinRange<Gpioa> = gpio::PinRange::new(8, 1);
-pub static DIR: gpio::PinRange<Gpioa> = gpio::PinRange::new(9, 1);
-pub static ENABLE: gpio::PinRange<Gpioa> = gpio::PinRange::new(10, 1);
-pub static RESET: gpio::PinRange<Gpioa> = gpio::PinRange::new(11, 1);
+pub const STEP: gpio::PinRange<Gpioa> = gpio::PinRange::new(8, 1);
+pub const DIR: gpio::PinRange<Gpioa> = gpio::PinRange::new(9, 1);
+pub const ENABLE: gpio::PinRange<Gpioa> = gpio::PinRange::new(10, 1);
+pub const RESET: gpio::PinRange<Gpioa> = gpio::PinRange::new(11, 1);
 
 pub const DRIVER_TICK_FREQUENCY: u32 = 1_000_000; // 1us timer resolution
 
-const fn ns2ticks(ns: u32) -> u16 {
-    const NANOS_IN_TICK: u32 = 1000000000 / DRIVER_TICK_FREQUENCY;
-    return ((ns + NANOS_IN_TICK - 1) / NANOS_IN_TICK) as u16;
-}
-
-pub const STEP_PULSE_WIDTH_TICKS: u16 = ns2ticks(75);
+pub const STEP_PULSE_WIDTH_NS: u16 = 75;
 
 // Controls
-pub static LEFT: gpio::PinRange<Gpioa> = gpio::PinRange::new(1, 1);
-pub static RIGHT: gpio::PinRange<Gpioa> = gpio::PinRange::new(2, 1);
-pub static FAST: gpio::PinRange<Gpioa> = gpio::PinRange::new(3, 1);
+pub const LEFT: gpio::PinRange<Gpioa> = gpio::PinRange::new(1, 1);
+pub const RIGHT: gpio::PinRange<Gpioa> = gpio::PinRange::new(2, 1);
+pub const FAST: gpio::PinRange<Gpioa> = gpio::PinRange::new(3, 1);
 
 // Hall
-const HALL_TICK_FREQUENCY: u32 = 100000; // 0.01 ms
-const HALL_MAX_RPM: u32 = 6000;
-const HALL_MIN_RPM: u32 = 50;
+pub const HALL_TICK_FREQUENCY: u32 = 100000; // 0.01 ms
+pub const HALL_MAX_RPM: u32 = 6000;
+pub const HALL_MIN_RPM: u32 = 50;
 
-pub static HALL: gpio::PinRange<Gpioa> = gpio::PinRange::new(0, 1);
+pub const HALL: gpio::PinRange<Gpioa> = gpio::PinRange::new(0, 1);

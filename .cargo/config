@@ -1,6 +1,7 @@
 [target.thumbv7m-none-eabi]
 rustflags = [
   "-C", "link-arg=-Tlink.x",
+  "-C", "link-arg=-Map=target/x2-feed.map",
   "-C", "linker=arm-none-eabi-ld",
   "-Z", "linker-flavor=ld",
 ]
