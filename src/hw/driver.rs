@@ -120,9 +120,10 @@ impl<'a> Driver<'a> {
             return false;
         }
 
-        // If there is a pending interrupt, wait until it is cleared.
-        // (for instance, we got here just after last timer overflow and it wasn't processed yet).
-        while self.tim1.sr.read().uif().is_pending() {}
+        // Last update is pending, consider as non-stopped yet
+        if self.tim1.sr.read().uif().is_pending() {
+            return false;
+        }
         true
     }
 
