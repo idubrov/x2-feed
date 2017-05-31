@@ -105,7 +105,7 @@ fn init(ref priority: P0, threshold: &TMax) {
     driver.init(&rcc);
     driver.release();
     let stepper = STEPPER.access(priority, threshold);
-    stepper.borrow_mut().set_acceleration((ACCELERATION * MICROSTEPS) << 8);
+    stepper.borrow_mut().set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap();
 }
 
 fn estop(syst: &Syst, lcd: &hd44780::HD44780<lcd::LcdHw>) -> ! {
@@ -236,7 +236,7 @@ fn handle_ipm(state: &mut State, input: controls::State, priority: &P0, threshol
     // FIXME: divide after shift?
     let speed = ((((ipm + 1) << 8) as u32) * PITCH * STEPS_PER_ROTATION * MICROSTEPS) / 60;
     if state.speed != speed {
-        stepper_command(&priority, &threshold, |mut s, _| { s.set_speed(speed); });
+        stepper_command(&priority, &threshold, |mut s, _| { s.set_speed(speed) }).unwrap();
         state.speed = speed;
     }
     ipm

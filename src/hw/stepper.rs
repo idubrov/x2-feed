@@ -31,7 +31,7 @@ impl Stepper {
     }
 
     /// Set new acceleration (steps per second per second), in 24.8 format.
-    pub fn set_acceleration(&mut self, acceleration: u32) {
+    pub fn set_acceleration(&mut self, acceleration: u32) -> stepgen::Result {
         self.stepgen.set_acceleration(acceleration)
     }
 
@@ -39,8 +39,8 @@ impl Stepper {
     /// reach this speed if target step is far enough, so there is enough time for deceleration.
     /// FIXME: no Javadoc!
     /// @param speed target slew speed to reach, in steps per second, 24.8 format
-    pub fn set_speed(&mut self, speed: u32) {
-        self.stepgen.set_target_speed(speed);
+    pub fn set_speed(&mut self, speed: u32) -> stepgen::Result {
+        self.stepgen.set_target_speed(speed)
     }
 
     fn load_delay(&mut self, driver: &Driver) -> u32 {
