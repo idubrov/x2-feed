@@ -17,9 +17,9 @@ use stm32f103xx::interrupt::{Tim2, Tim1UpTim10};
 use stm32f103xx::{Syst};
 use hw::{delay, clock, lcd, led, encoder, driver, stepper, controls, hall, ESTOP};
 use core::cell::RefCell;
+use core::fmt::Write;
 
 mod hw;
-mod print;
 
 static LCD: lcd::Lcd = lcd::Lcd::new();
 static LED: led::Led = led::Led::new();
@@ -99,6 +99,8 @@ fn init(ref priority: P0, threshold: &TMax) {
     LED.init(&gpioa, &rcc);
     LCD.init(&gpiob, &rcc);
     ENC.init(&tim3, &gpioa, &rcc);
+    ENC.set_current(&tim3, 0); // Start with 1 IPM
+    ENC.set_limit(&tim3, MAX_IPM);
     CONTROLS.init(&gpioa, &rcc);
     hall.borrow_mut().init(&tim2, &gpioa, &rcc);
 
@@ -108,15 +110,16 @@ fn init(ref priority: P0, threshold: &TMax) {
     stepper.borrow_mut().set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap();
 }
 
-fn estop(syst: &Syst, lcd: &hd44780::HD44780<lcd::LcdHw>) -> ! {
+fn estop(syst: &Syst, lcd: &mut hd44780::HD44780<lcd::LcdHw>) -> ! {
     ::delay::ms(syst, 1); // Wait till power is back to normal
 
     // Immediately disable driver outputs
     ::hw::ENABLE.set(unsafe { &(*stm32f103xx::GPIOA.get()) }, 0);
+
     lcd.position(0, 0);
-    lcd.print("*E-STOP*");
+    write!(lcd, "*E-STOP*").unwrap();
     lcd.position(0, 1);
-    lcd.print("        ");
+    write!(lcd, "        ").unwrap();
     loop {
         cortex_m::asm::nop();
     }
@@ -164,7 +167,7 @@ fn idle(priority: P0, threshold: T0) -> ! {
     let syst = SYST.access(&priority, &threshold);
     let gpiob = GPIOB.access(&priority, &threshold);
     let tim3 = TIM3.access(&priority, &threshold);
-    let lcd = LCD.materialize(&syst, &gpiob);
+    let mut lcd = LCD.materialize(&syst, &gpiob);
     lcd.init();
     lcd.display(hd44780::DisplayMode::DisplayOn, hd44780::DisplayCursor::CursorOff, hd44780::DisplayBlink::BlinkOff);
     lcd.entry_mode(hd44780::EntryModeDirection::EntryRight, hd44780::EntryModeShift::NoShift);
@@ -182,11 +185,10 @@ fn idle(priority: P0, threshold: T0) -> ! {
         fast_ipm: 30 - 1,
         rpm: 0,
     };
-    ENC.set_current(&tim3, state.slow_ipm);
-    ENC.set_limit(&tim3, MAX_IPM);
+    ENC.set_current(&tim3, state.slow_ipm - 1);
     loop {
         if ESTOP.get(&gpiob) == 0 {
-            estop(&syst, &lcd);
+            estop(&syst, &mut lcd);
         }
 
         let input = CONTROLS.get();
@@ -195,30 +197,24 @@ fn idle(priority: P0, threshold: T0) -> ! {
         handle_rpm(&mut state, &priority, &threshold);
 
         lcd.position(0, 0);
-        // Print rounded RPM
-        print::print_formatted(&lcd, (state.rpm + 128) >> 8, print::Alignment::Right, 4);
-        lcd.print(" RPM");
+        let rrpm = (state.rpm + 128) >> 8;
+        write!(&mut lcd, " {: >4} RPM", rrpm).unwrap();
 
         lcd.position(0, 1);
-        print::print_formatted(&lcd, (ipm + 1) as u32, print::Alignment::Right, 4);
-        if state.fast {
-            lcd.print(" FIPM");
-        } else {
-            lcd.print(" IPM ");
-        }
+        write!(&mut lcd, "{: >4} {}IPM", (ipm + 1) as u32, if state.fast { 'F' } else { ' ' }).unwrap();
     }
 }
 
 fn handle_ipm(state: &mut State, input: controls::State, priority: &P0, threshold: &T0) -> u16 {
     let tim3 = TIM3.access(&priority, &threshold);
 
-    let mut ipm = ENC.current(&tim3);
+    let mut ipm = ENC.current(&tim3) + 1; // Encoder is off by one (as it starts from 0)
     match (state.fast, input.fast) {
         (false, true) => {
             // Switch to fast IPM
             state.slow_ipm = ipm;
             ipm = state.fast_ipm;
-            ENC.set_current(&tim3, ipm);
+            ENC.set_current(&tim3, ipm - 1);
             state.fast = true;
         }
 
@@ -226,7 +222,7 @@ fn handle_ipm(state: &mut State, input: controls::State, priority: &P0, threshol
             // Switch to slow IPM
             state.fast_ipm = ipm;
             ipm = state.slow_ipm;
-            ENC.set_current(&tim3, ipm);
+            ENC.set_current(&tim3, ipm - 1);
             state.fast = false;
         }
 
@@ -234,7 +230,7 @@ fn handle_ipm(state: &mut State, input: controls::State, priority: &P0, threshol
     }
     // Update stepper speed based on current setting
     // FIXME: divide after shift?
-    let speed = ((((ipm + 1) << 8) as u32) * PITCH * STEPS_PER_ROTATION * MICROSTEPS) / 60;
+    let speed = (((ipm << 8) as u32) * PITCH * STEPS_PER_ROTATION * MICROSTEPS) / 60;
     if state.speed != speed {
         stepper_command(&priority, &threshold, |mut s, _| { s.set_speed(speed) }).unwrap();
         state.speed = speed;
@@ -245,6 +241,7 @@ fn handle_ipm(state: &mut State, input: controls::State, priority: &P0, threshol
 fn handle_feed(state: &mut State, input: controls::State, priority: &P0, threshold: &T0) {
     match (state.run_state, input.left, input.right) {
         (RunState::Stopped, true, false) => {
+            // FIXME: ideally, we should have "move left" command instead of using "-infinity" and "+infinity"
             stepper_command(&priority, &threshold, |mut s, d| { s.move_to(d, -1000000000); });
             state.run_state = RunState::Running;
         }
