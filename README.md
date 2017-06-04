@@ -13,3 +13,15 @@ The following features are supported:
 
 ## PCB
 See PCB (Eagle CAD) in the [pcb/](pcb/) directory.
+
+## Building
+
+You need the following software installed:
+
+1. [Rust](https://www.rust-lang.org) 
+1. [xargo](https://github.com/japaric/xargo)
+1. [stepgen](https://github.com/idubrov/stepgen) (put it into peer directory with `x2-feed`)
+1. [hd44780](https://github.com/idubrov/hd44780) (put it into peer directory with `x2-feed`)
+
+To build the binary, run `xargo build`.
+
