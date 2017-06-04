@@ -9,7 +9,8 @@ cortex-m = "0.2.6"
 
 [dependencies.stepgen]
 version = "0.1.0"
-path = "../stepgen/"
+git = "https://github.com/idubrov/stepgen"
+tag = "0.1.0"
 
 [dependencies.cortex-m-rtfm]
 version = "0.1.0"
@@ -21,7 +22,8 @@ version = "0.2.1"
 version = "0.5.0"
 
 [dependencies.hd44780]
-path = "../hd44780/"
+git = "https://github.com/idubrov/hd44780"
+tag = "0.1.0"
 
 [profile]
 
