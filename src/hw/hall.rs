@@ -79,7 +79,7 @@ impl Hall {
                 // Capture happened just after the overflow: need to increment upper "msb"
                 self.msb += 1;
             }
-            let captured: u32 = lsb;// (self.msb << 16) | lsb;
+            let captured: u32 = (self.msb << 16) | lsb;
 
             // Capture only if period is long enough -- ignore the noise.
             if captured >= MIN_PERIOD {

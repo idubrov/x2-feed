@@ -242,10 +242,10 @@ fn idle(priority: P0, threshold: T0) -> ! {
 
         lcd.position(0, 0);
         let rrpm = (state.rpm + 128) >> 8;
-        write!(&mut lcd, " {: >4} RPM", rrpm).unwrap();
+        write!(&mut lcd, "{: >4} RPM", rrpm).unwrap();
 
         lcd.position(0, 1);
-        write!(&mut lcd, "{: >4} {}IPM", (ipm + 1) as u32, if state.fast { 'F' } else { ' ' }).unwrap();
+        write!(&mut lcd, "{}{: >3} IPM", if state.fast { 'F' } else { ' ' }, (ipm + 1) as u32).unwrap();
     }
 }
 
