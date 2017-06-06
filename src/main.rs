@@ -28,7 +28,7 @@ extern crate cortex_m_rtfm as rtfm;
 
 use rtfm::{P0, P2, P4, C2, C4, T0, T2, T4, TMax, Resource};
 use stm32f103xx::interrupt::{Tim2, Tim1UpTim10};
-use stm32f103xx::{Syst};
+use stm32f103xx::{Syst, Gpioa, Gpiob};
 use hw::{delay, clock, lcd, led, encoder, driver, stepper, controls, hall, ESTOP};
 use core::cell::RefCell;
 use core::fmt::Write;
@@ -95,6 +95,34 @@ peripherals!(stm32f103xx, {
     },
 });
 
+fn passivate(gpioa: &Gpioa, gpiob: &Gpiob) {
+    // Pull down remaining inputs on GPIOA and GPIOB
+    // PA12
+    gpioa.brr.write(|w| w
+        .br12().set());
+    gpioa.crh.modify(|_, w| w
+        .mode12().input().cnf12().bits(0b10)
+    );
+
+    // PB5, PB6, PB7, PB8, PB9
+    gpiob.brr.write(|w| w
+        .br5().set()
+        .br6().set()
+        .br7().set()
+        .br8().set()
+        .br9().set());
+    gpiob.crl.modify(|_, w| w
+        .mode5().input().cnf5().bits(0b10)
+        .mode6().input().cnf6().bits(0b10)
+        .mode7().input().cnf7().bits(0b10)
+    );
+
+    gpiob.crh.modify(|_, w| w
+        .mode8().input().cnf8().bits(0b10)
+        .mode9().input().cnf9().bits(0b10)
+    );
+}
+
 fn init(ref priority: P0, threshold: &TMax) {
     let rcc = RCC.access(priority, threshold);
     let syst = SYST.access(priority, threshold);
@@ -117,6 +145,8 @@ fn init(ref priority: P0, threshold: &TMax) {
     ENC.set_limit(&tim3, MAX_IPM);
     CONTROLS.init(&gpioa, &rcc);
     hall.borrow_mut().init(&tim2, &gpioa, &rcc);
+
+    passivate(&gpioa, &gpiob);
 
     driver.init(&rcc);
     driver.release();
