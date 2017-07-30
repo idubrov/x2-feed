@@ -1,4 +1,4 @@
-use stm32f103xx::{Gpioa, Rcc};
+use stm32f103xx::{GPIOA, RCC};
 
 pub struct Led {}
 
@@ -7,7 +7,7 @@ impl Led {
         Led {}
     }
 
-    pub fn init(&self, gpioa: &Gpioa, rcc: &Rcc) {
+    pub fn init(&self, gpioa: &GPIOA, rcc: &RCC) {
         rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
 
         // PA4 is LED
@@ -15,7 +15,7 @@ impl Led {
         ::hw::LED.set(gpioa, 1); // Turn it off
     }
 
-    pub fn set<'a>(&self, gpioa: &'a Gpioa, on: bool) {
+    pub fn set<'a>(&self, gpioa: &'a GPIOA, on: bool) {
         ::hw::LED.set(gpioa, if on { 0 } else { 1 }); // '0' is on
     }
 }

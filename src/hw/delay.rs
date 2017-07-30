@@ -1,7 +1,7 @@
-use stm32f103xx::Syst;
+use stm32f103xx::SYST;
 
 // FIXME: 1.8sec is about maximum
-pub fn us(syst: &Syst, delay: u32) {
+pub fn us(syst: &SYST, delay: u32) {
     let old_reload = syst.get_reload();
     // SysTick is 1/8 AHB (9Mhz)
     let reload = 9 * delay - 1;
@@ -14,7 +14,7 @@ pub fn us(syst: &Syst, delay: u32) {
     syst.set_reload(old_reload);
 }
 
-pub fn ms(syst: &Syst, delay: u32) {
+pub fn ms(syst: &SYST, delay: u32) {
     for _ in 0 .. delay {
         us(syst, 1000);
     }

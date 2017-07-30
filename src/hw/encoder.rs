@@ -1,4 +1,4 @@
-use stm32f103xx::{Gpioa, Tim3, Rcc};
+use stm32f103xx::{GPIOA, TIM3, RCC};
 
 pub struct Encoder {}
 
@@ -7,7 +7,7 @@ impl Encoder {
         Encoder {}
     }
 
-    pub fn init(&self, tim3: &Tim3, gpioa: &Gpioa, rcc: &Rcc) {
+    pub fn init(&self, tim3: &TIM3, gpioa: &GPIOA, rcc: &RCC) {
         rcc.apb1enr.modify(|_, w| w.tim3en().enabled());
         rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
         rcc.apb2enr.modify(|_, w| w.afioen().enabled()); // FIXME: Do we need this?
@@ -25,7 +25,7 @@ impl Encoder {
         tim3.smcr.write(|w| w.sms().encoder_ti2());
 
         // Count on rising edges
-        tim3.ccer.write(|w| w.cc1p().clear().cc2p().clear());
+        tim3.ccer.write(|w| w.cc1p().clear_bit().cc2p().clear_bit());
 
         tim3.ccmr1_output.write(|w| unsafe {
             w.bits((0b1111 << 4 /* Input capture 1 filter */) |
@@ -35,15 +35,15 @@ impl Encoder {
         tim3.cr1.write(|w| w.cen().enabled());
     }
 
-    pub fn set_limit(&self, tim3: &Tim3, limit : u16) {
+    pub fn set_limit(&self, tim3: &TIM3, limit : u16) {
         tim3.arr.write(|w| w.arr().bits((limit * 2) - 1));
     }
 
-    pub fn current(&self, tim3: &Tim3) -> u16{
+    pub fn current(&self, tim3: &TIM3) -> u16{
         tim3.cnt.read().cnt().bits() / 2
     }
 
-    pub fn set_current(&self, tim3: &Tim3, pos: u16) {
+    pub fn set_current(&self, tim3: &TIM3, pos: u16) {
         tim3.cnt.write(|w| w.cnt().bits(pos * 2));
     }
 }

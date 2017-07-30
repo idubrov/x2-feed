@@ -1,6 +1,6 @@
 extern crate hd44780;
 
-use stm32f103xx::{Gpiob, Syst, Rcc};
+use stm32f103xx::{GPIOB, SYST, RCC};
 
 /// Wrapper type to create HD44780 instances as needed
 pub struct Lcd {}
@@ -10,7 +10,7 @@ impl Lcd {
         Lcd {}
     }
 
-    pub fn init(&self, gpiob: &Gpiob, rcc: &Rcc) {
+    pub fn init(&self, gpiob: &GPIOB, rcc: &RCC) {
         rcc.apb2enr.modify(|_, w| w.iopben().enabled());
 
         // PB1 is RS
@@ -30,7 +30,7 @@ impl Lcd {
         ::hw::RW.set(gpiob, 0);
     }
 
-    pub fn materialize<'a>(&self, syst: &'a Syst, gpiob: &'a Gpiob) -> hd44780::HD44780<LcdHw<'a>> {
+    pub fn materialize<'a>(&self, syst: &'a SYST, gpiob: &'a GPIOB) -> hd44780::HD44780<LcdHw<'a>> {
         hd44780::HD44780::new(LcdHw {
             syst,
             gpiob,
@@ -40,8 +40,8 @@ impl Lcd {
 
 /// Binding of HD44780 instance to real hardware
 pub struct LcdHw<'a> {
-    syst: &'a Syst,
-    gpiob: &'a Gpiob,
+    syst: &'a SYST,
+    gpiob: &'a GPIOB,
 }
 
 impl<'a> hd44780::Hardware for LcdHw<'a> {

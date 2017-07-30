@@ -1,10 +1,9 @@
 extern crate stm32f103xx;
 extern crate cortex_m;
 
-use stm32f103xx::{Rcc, Flash};
-use cortex_m::peripheral::{Syst};
+use stm32f103xx::{RCC, FLASH, SYST};
 
-fn wait_condition<F>(syst: &Syst, f: F) -> bool
+fn wait_condition<F>(syst: &SYST, f: F) -> bool
     where
         F: Fn() -> bool {
     syst.clear_current();
@@ -20,7 +19,7 @@ fn wait_condition<F>(syst: &Syst, f: F) -> bool
 /// Enables PLL with multiplier of 9 (72Mhz)
 /// Sets up SYSCLK to use PLL as a source
 /// Sets up SysTick to run at 1ms period.
-pub fn setup(rcc: &Rcc, syst: &Syst, flash: &Flash) {
+pub fn setup(rcc: &RCC, syst: &SYST, flash: &FLASH) {
     if rcc.cr.read().pllrdy().is_locked() {
         panic!("PLL must be unlocked at this moment!");
     }

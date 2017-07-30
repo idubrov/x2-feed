@@ -1,6 +1,6 @@
 use hw::{LEFT, RIGHT, FAST};
 
-use stm32f103xx::{GPIOA, Gpioa, Rcc};
+use stm32f103xx::{GPIOA, RCC};
 
 #[derive(Clone, Copy)]
 pub struct State {
@@ -16,7 +16,7 @@ impl Controls {
         Controls {}
     }
 
-    pub fn init(&self, gpioa: &Gpioa, rcc: &Rcc) {
+    pub fn init(&self, gpioa: &GPIOA, rcc: &RCC) {
         rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
 
         gpioa.crl.write(|w| w

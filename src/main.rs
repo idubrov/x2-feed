@@ -1,6 +1,6 @@
 #![feature(const_fn)]
 #![feature(used)]
-#![feature(struct_field_attributes)]
+#![feature(proc_macro)]
 #![no_std]
 
 //! Stepper-motor based power feed for X2 mill.
@@ -23,15 +23,13 @@ extern crate stm32f103xx;
 extern crate stepgen;
 extern crate hd44780;
 
-#[macro_use]
 extern crate cortex_m_rtfm as rtfm;
 
-use rtfm::{P0, P2, P4, C2, C4, T0, T2, T4, TMax, Resource};
-use stm32f103xx::interrupt::{Tim2, Tim1UpTim10};
-use stm32f103xx::{Syst, Gpioa, Gpiob};
+use stm32f103xx::{SYST, GPIOA, GPIOB};
 use hw::{delay, clock, lcd, led, encoder, driver, stepper, controls, hall, ESTOP};
-use core::cell::RefCell;
 use core::fmt::Write;
+
+use rtfm::{app, Threshold};
 
 mod hw;
 
@@ -41,12 +39,32 @@ static ENC: encoder::Encoder = encoder::Encoder::new();
 static DRIVER: driver::DriverRef = driver::DriverRef::new();
 static CONTROLS: controls::Controls = controls::Controls::new();
 
-static STEPPER: Resource<RefCell<stepper::Stepper>, C4> =
-    Resource::new(RefCell::new(stepper::Stepper::new()));
+app! {
+    device: stm32f103xx,
 
-static HALL: Resource<RefCell<hall::Hall>, C2> =
-    Resource::new(RefCell::new(hall::Hall::new()));
+    resources: {
+        static STEPPER: stepper::Stepper = stepper::Stepper::new();
+        static HALL: hall::Hall = hall::Hall::new();
+    },
 
+    idle: {
+        resources: [TIM1, TIM3, SYST, GPIOA, GPIOB, HALL, STEPPER],
+    },
+
+    tasks: {
+        TIM1_UP_TIM10: {
+            path: step_completed,
+            resources: [STEPPER, TIM1, GPIOA]
+        },
+
+        TIM2: {
+            path: hall_interrupt,
+            resources: [HALL, TIM2]
+        }
+    },
+}
+
+/*
 tasks!(stm32f103xx, {
     step_completed: Task {
         interrupt: Tim1UpTim10,
@@ -66,7 +84,7 @@ peripherals!(stm32f103xx, {
         ceiling: C0,
     },
     SYST: Peripheral {
-        register_block: Syst,
+        register_block: SYST,
         ceiling: C0,
     },
     FLASH: Peripheral {
@@ -86,31 +104,31 @@ peripherals!(stm32f103xx, {
         ceiling: C0,
     },
     GPIOA: Peripheral {
-        register_block: Gpioa,
+        register_block: GPIOA,
         ceiling: C4,
     },
     GPIOB: Peripheral {
-        register_block: Gpiob,
+        register_block: GPIOB,
         ceiling: C0,
     },
-});
+});*/
 
-fn passivate(gpioa: &Gpioa, gpiob: &Gpiob) {
+fn passivate(gpioa: &GPIOA, gpiob: &GPIOB) {
     // Pull down remaining inputs on GPIOA and GPIOB
     // PA12
     gpioa.brr.write(|w| w
-        .br12().set());
+        .br12().set_bit());
     gpioa.crh.modify(|_, w| w
         .mode12().input().cnf12().bits(0b10)
     );
 
     // PB5, PB6, PB7, PB8, PB9
     gpiob.brr.write(|w| w
-        .br5().set()
-        .br6().set()
-        .br7().set()
-        .br8().set()
-        .br9().set());
+        .br5().set_bit()
+        .br6().set_bit()
+        .br7().set_bit()
+        .br8().set_bit()
+        .br9().set_bit());
     gpiob.crl.modify(|_, w| w
         .mode5().input().cnf5().bits(0b10)
         .mode6().input().cnf6().bits(0b10)
@@ -123,38 +141,28 @@ fn passivate(gpioa: &Gpioa, gpiob: &Gpiob) {
     );
 }
 
-fn init(ref priority: P0, threshold: &TMax) {
-    let rcc = RCC.access(priority, threshold);
-    let syst = SYST.access(priority, threshold);
-    let flash = FLASH.access(priority, threshold);
-    let gpioa = GPIOA.access(priority, threshold);
-    let gpiob = GPIOB.access(priority, threshold);
-    let tim1 = TIM1.access(priority, threshold);
-    let tim2 = TIM2.access(priority, threshold);
-    let tim3 = TIM3.access(priority, threshold);
-    let driver = DRIVER.materialize(&tim1, &gpioa);
-    let hall = HALL.access(priority, threshold);
+fn init(p: init::Peripherals, r: init::Resources) {
+    let driver = DRIVER.materialize(p.TIM1, p.GPIOA);
 
-    clock::setup(&rcc, &syst, &flash);
+    clock::setup(p.RCC, p.SYST, p.FLASH);
 
     // Initialize hardware
-    LED.init(&gpioa, &rcc);
-    LCD.init(&gpiob, &rcc);
-    ENC.init(&tim3, &gpioa, &rcc);
-    ENC.set_current(&tim3, 0); // Start with 1 IPM
-    ENC.set_limit(&tim3, MAX_IPM);
-    CONTROLS.init(&gpioa, &rcc);
-    hall.borrow_mut().init(&tim2, &gpioa, &rcc);
+    LED.init(p.GPIOA, p.RCC);
+    LCD.init(p.GPIOB, p.RCC);
+    ENC.init(p.TIM3, p.GPIOA, p.RCC);
+    ENC.set_current(p.TIM3, 0); // Start with 1 IPM
+    ENC.set_limit(p.TIM3, MAX_IPM);
+    CONTROLS.init(p.GPIOA, p.RCC);
+    r.HALL.init(p.TIM2, p.GPIOA, p.RCC);
 
-    passivate(&gpioa, &gpiob);
+    passivate(p.GPIOA, p.GPIOB);
 
-    driver.init(&rcc);
+    driver.init(p.RCC);
     driver.release();
-    let stepper = STEPPER.access(priority, threshold);
-    stepper.borrow_mut().set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap();
+    r.STEPPER.set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap();
 }
 
-fn estop(syst: &Syst, lcd: &mut hd44780::HD44780<lcd::LcdHw>) -> ! {
+fn estop(syst: &SYST, lcd: &mut hd44780::HD44780<lcd::LcdHw>) -> ! {
     ::delay::ms(syst, 1); // Wait till power is back to normal
 
     // Immediately disable driver outputs
@@ -169,19 +177,24 @@ fn estop(syst: &Syst, lcd: &mut hd44780::HD44780<lcd::LcdHw>) -> ! {
     }
 }
 
-fn stepper_command<T, CB>(priority: &P0, threshold: &T0, cb: CB) -> T
+fn stepper_command<T, CB>(t: &mut Threshold, r: &mut idle::Resources, cb: CB) -> T
     where
-        CB: for<'a> FnOnce(core::cell::RefMut<'a, stepper::Stepper>, &driver::Driver) -> T {
-    threshold.raise(
-        &STEPPER, |threshold| {
-            let gpioa = GPIOA.access(priority, threshold);
-            let tim1 = TIM1.access(priority, threshold);
-            let driver = DRIVER.materialize(&tim1, &gpioa);
-            let stepper = STEPPER.access(priority, threshold);
-            let result = cb(stepper.borrow_mut(), &driver);
-            result
-        }
-    )
+        CB: for<'a> FnOnce(&mut stepper::Stepper, &driver::Driver) -> T {
+    use rtfm::Resource;
+
+    let stepper = &mut r.STEPPER;
+    let tim1 = &r.TIM1;
+    let gpioa = &r.GPIOA;
+
+    stepper.claim_mut(t, |stepper, t| {
+        tim1.claim(t, |tim1, t| {
+            gpioa.claim(t, |gpioa, _t| {
+                let driver = DRIVER.materialize(tim1, gpioa);
+                let result = cb(stepper, &driver);
+                result
+            })
+        })
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -204,21 +217,33 @@ struct State {
     speed: u32,
     slow_ipm: u16,
     fast_ipm: u16,
+    ipm: u16,
     rpm: u32,
 }
 
-fn idle(priority: P0, threshold: T0) -> ! {
-    let syst = SYST.access(&priority, &threshold);
-    let gpiob = GPIOB.access(&priority, &threshold);
-    let tim3 = TIM3.access(&priority, &threshold);
-    let mut lcd = LCD.materialize(&syst, &gpiob);
+fn init_screen(r: &idle::Resources) {
+    let mut lcd = LCD.materialize(r.SYST, r.GPIOB);
     lcd.init();
     lcd.display(hd44780::DisplayMode::DisplayOn, hd44780::DisplayCursor::CursorOff, hd44780::DisplayBlink::BlinkOff);
     lcd.entry_mode(hd44780::EntryModeDirection::EntryRight, hd44780::EntryModeShift::NoShift);
+}
+
+fn update_screen(state: &State, r: &idle::Resources) {
+    let mut lcd = LCD.materialize(r.SYST, r.GPIOB);
+    lcd.position(0, 0);
+    let rrpm = (state.rpm + 128) >> 8;
+    write!(&mut lcd, "{: >4} RPM", rrpm).unwrap();
+
+    lcd.position(0, 1);
+    write!(&mut lcd, "{}{: >3} IPM", if state.fast { 'F' } else { ' ' }, (state.ipm + 1) as u32).unwrap();
+}
+
+fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
+    init_screen(&r);
 
     // Need to wait at least 40ms after Vcc rises to 2.7V
     // STM32 could start much earlier than that
-    ::delay::ms(&syst, 50);
+    ::delay::ms(r.SYST, 50);
 
     let mut state = State {
         run_state: RunState::Stopped,
@@ -228,37 +253,34 @@ fn idle(priority: P0, threshold: T0) -> ! {
         slow_ipm: 10 - 1,
         fast_ipm: 30 - 1,
         rpm: 0,
+        ipm: 0,
     };
-    ENC.set_current(&tim3, state.slow_ipm - 1);
+    ENC.set_current(r.TIM3, state.slow_ipm - 1);
     loop {
-        if ESTOP.get(&gpiob) == 0 {
-            estop(&syst, &mut lcd);
+        if ESTOP.get(r.GPIOB) == 0 {
+            {
+                let mut lcd = LCD.materialize(r.SYST, r.GPIOB);
+                estop(r.SYST, &mut lcd);
+            }
         }
 
         let input = CONTROLS.get();
-        let ipm = handle_ipm(&mut state, input, &priority, &threshold);
-        handle_feed(&mut state, input, &priority, &threshold);
-        handle_rpm(&mut state, &priority, &threshold);
+        handle_ipm(&mut state, input, t, &mut r);
+        handle_feed(&mut state, input, t, &mut r);
+        handle_rpm(&mut state, t, &r);
 
-        lcd.position(0, 0);
-        let rrpm = (state.rpm + 128) >> 8;
-        write!(&mut lcd, "{: >4} RPM", rrpm).unwrap();
-
-        lcd.position(0, 1);
-        write!(&mut lcd, "{}{: >3} IPM", if state.fast { 'F' } else { ' ' }, (ipm + 1) as u32).unwrap();
+        update_screen(&state, &r);
     }
 }
 
-fn handle_ipm(state: &mut State, input: controls::State, priority: &P0, threshold: &T0) -> u16 {
-    let tim3 = TIM3.access(&priority, &threshold);
-
-    let mut ipm = ENC.current(&tim3) + 1; // Encoder is off by one (as it starts from 0)
+fn handle_ipm(state: &mut State, input: controls::State, t: &mut Threshold, r: &mut idle::Resources) {
+    let mut ipm = ENC.current(r.TIM3) + 1; // Encoder is off by one (as it starts from 0)
     match (state.fast, input.fast) {
         (false, true) => {
             // Switch to fast IPM
             state.slow_ipm = ipm;
             ipm = state.fast_ipm;
-            ENC.set_current(&tim3, ipm - 1);
+            ENC.set_current(r.TIM3, ipm - 1);
             state.fast = true;
         }
 
@@ -266,7 +288,7 @@ fn handle_ipm(state: &mut State, input: controls::State, priority: &P0, threshol
             // Switch to slow IPM
             state.fast_ipm = ipm;
             ipm = state.slow_ipm;
-            ENC.set_current(&tim3, ipm - 1);
+            ENC.set_current(r.TIM3, ipm - 1);
             state.fast = false;
         }
 
@@ -276,32 +298,32 @@ fn handle_ipm(state: &mut State, input: controls::State, priority: &P0, threshol
     // FIXME: divide after shift?
     let speed = (((ipm << 8) as u32) * PITCH * STEPS_PER_ROTATION * MICROSTEPS) / 60;
     if state.speed != speed {
-        stepper_command(&priority, &threshold, |mut s, _| { s.set_speed(speed) }).unwrap();
+        stepper_command(t, r, |mut s, _| { s.set_speed(speed) }).unwrap();
         state.speed = speed;
     }
-    ipm
+    state.ipm = ipm
 }
 
-fn handle_feed(state: &mut State, input: controls::State, priority: &P0, threshold: &T0) {
+fn handle_feed(state: &mut State, input: controls::State, t: &mut Threshold, r: &mut idle::Resources) {
     match (state.run_state, input.left, input.right) {
         (RunState::Stopped, true, false) => {
             // FIXME: ideally, we should have "move left" command instead of using "-infinity" and "+infinity"
-            stepper_command(&priority, &threshold, |mut s, d| { s.move_to(d, -1000000000); });
+            stepper_command(t, r, |mut s, d| { s.move_to(d, -1000000000); });
             state.run_state = RunState::Running;
         }
 
         (RunState::Stopped, false, true) => {
-            stepper_command(&priority, &threshold, |mut s, d| { s.move_to(d, 1000000000); });
+            stepper_command(t, r, |mut s, d| { s.move_to(d, 1000000000); });
             state.run_state = RunState::Running;
         }
 
         (RunState::Running, false, false) => {
-            stepper_command(&priority, &threshold, |mut s, _| s.stop());
+            stepper_command(t, r, |mut s, _| s.stop());
             state.run_state = RunState::Stopping;
         }
 
         (RunState::Stopping, _, _) => {
-            if stepper_command(&priority, &threshold, |s, d| s.is_stopped(d)) {
+            if stepper_command(t, r, |s, d| s.is_stopped(d)) {
                 state.run_state = RunState::Stopped;
             }
         }
@@ -310,34 +332,27 @@ fn handle_feed(state: &mut State, input: controls::State, priority: &P0, thresho
     }
 }
 
-fn handle_rpm(state: &mut State, priority: &P0, threshold: &T0) {
-    let rpm = threshold.raise(
-        &HALL, |threshold| {
-            let hall = HALL.access(&priority, threshold);
-            let rpm = hall.borrow().rpm();
-            rpm
-        }
-    );
+fn handle_rpm(state: &mut State, t: &mut Threshold, r: &idle::Resources) {
+    use rtfm::Resource;
+
+    let rpm = r.HALL.claim(t, |hall, _t| hall.rpm());
+
     // Only capture if difference is big enough (more than .5%)
     if state.rpm == 0 || rpm * 200 > state.rpm * 201 || rpm * 200 < state.rpm * 199 {
         state.rpm = rpm;
     }
 }
 
-fn step_completed(mut _task: Tim1UpTim10, ref priority: P4, ref threshold: T4) {
-    let gpioa = GPIOA.access(priority, threshold);
-    let tim1 = TIM1.access(priority, threshold);
-    let driver = DRIVER.materialize(&tim1, &gpioa);
-    let stepper = STEPPER.access(priority, threshold);
+fn step_completed(_t: &mut Threshold, r: TIM1_UP_TIM10::Resources) {
+    let driver = DRIVER.materialize(r.TIM1, r.GPIOA);
+    let tim1 = &r.TIM1;
 
     if tim1.sr.read().uif().is_pending() {
         tim1.sr.modify(|_, w| w.uif().clear());
-        stepper.borrow_mut().step_completed(&driver);
+        r.STEPPER.step_completed(&driver);
     }
 }
 
-fn hall_interrupt(mut _task: Tim2, ref priority: P2, ref threshold: T2) {
-    let tim2 = TIM2.access(priority, threshold);
-    let hall = HALL.access(priority, threshold);
-    hall.borrow_mut().interrupt(&tim2);
+fn hall_interrupt(_t: &mut Threshold, r: TIM2::Resources) {
+    r.HALL.interrupt(r.TIM2);
 }

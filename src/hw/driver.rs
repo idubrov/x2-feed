@@ -1,4 +1,4 @@
-use stm32f103xx::{Gpioa, Tim1, Rcc};
+use stm32f103xx::{GPIOA, TIM1, RCC};
 
 const fn ns2ticks(ns: u32) -> u16 {
     const NANOS_IN_SECOND: u32 = 1000000000 / ::hw::DRIVER_TICK_FREQUENCY;
@@ -17,7 +17,7 @@ impl DriverRef {
         }
     }
 
-    pub fn materialize<'a>(&self, tim1: &'a Tim1, gpioa: &'a Gpioa) -> Driver<'a> {
+    pub fn materialize<'a>(&self, tim1: &'a TIM1, gpioa: &'a GPIOA) -> Driver<'a> {
         Driver {
             tim1: tim1,
             gpioa: gpioa,
@@ -26,12 +26,12 @@ impl DriverRef {
 }
 
 pub struct Driver<'a> {
-    tim1: &'a Tim1,
-    gpioa: &'a Gpioa,
+    tim1: &'a TIM1,
+    gpioa: &'a GPIOA,
 }
 
 impl<'a> Driver<'a> {
-    pub fn init(&self, rcc: &Rcc) {
+    pub fn init(&self, rcc: &RCC) {
         let tim1 = self.tim1;
 
         rcc.apb2enr.modify(|_, w| w.tim1en().enabled());
@@ -58,35 +58,35 @@ impl<'a> Driver<'a> {
             .dir().up()
             .ckd().div1()
             // Preload ARR (gets loaded once timer update event triggers)
-            .arpe().set()
+            .arpe().set_bit()
             // Only counter overflow/underflow generates an update interrupt
             // reload_timer() should not generate an event.
-            .urs().set());
+            .urs().set_bit());
 
         tim1.cr2.write(|w| w
             // Output '1' when idle
-            .ois1().set());
+            .ois1().set_bit());
 
         tim1.ccmr1_output.write(|w| w
             // Preload CCR1 (gets loaded once timer update event triggers)
-            .oc1pe().set()
+            .oc1pe().set_bit()
             // Inactive till CCR1, then active
             .oc1m().pwm2());
 
         // Configure PWM channel 1
         tim1.ccer.write(|w| w
             // Active low
-            .cc1p().set()
+            .cc1p().set_bit()
             // Enable channel 1
-            .cc1e().set());
+            .cc1e().set_bit());
 
         tim1.bdtr.write(|w| w
             // Enable PWM outputs
-            .moe().set());
+            .moe().set_bit());
 
         // Enable interrupts
         tim1.sr.modify(|_, w| w.uif().clear());
-        tim1.dier.write(|w| w.uie().set());
+        tim1.dier.write(|w| w.uie().set_bit());
     }
 
     pub fn set_direction(&self, dir: bool) {
@@ -119,12 +119,12 @@ impl<'a> Driver<'a> {
 
     /// Generate event to reload timer values from preload registers.
     pub fn reload_timer(&self) {
-        self.tim1.egr.write(|w| w.ug().set());
+        self.tim1.egr.write(|w| w.ug().set_bit());
     }
 
     pub fn check_stopped(&self) -> bool {
         // Step generation is still running
-        if self.tim1.cr1.read().cen().is_set() {
+        if self.tim1.cr1.read().cen().bit_is_set() {
             return false;
         }
 

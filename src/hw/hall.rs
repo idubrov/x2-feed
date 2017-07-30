@@ -1,4 +1,4 @@
-use stm32f103xx::{Tim2, Gpioa, Rcc};
+use stm32f103xx::{TIM2, GPIOA, RCC};
 
 const MIN_PERIOD: u32 = 60 * ::hw::HALL_TICK_FREQUENCY / ::hw::HALL_MAX_RPM;
 const MAX_MSB: u32 = ((60 * ::hw::HALL_TICK_FREQUENCY) / ::hw::HALL_MIN_RPM + 0xffffu32) >> 16;
@@ -16,7 +16,7 @@ impl Hall {
         }
     }
 
-    pub fn init(&mut self, tim2: &Tim2, gpioa: &Gpioa, rcc: &Rcc) {
+    pub fn init(&mut self, tim2: &TIM2, gpioa: &GPIOA, rcc: &RCC) {
         rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
         rcc.apb1enr.modify(|_, w| w.tim2en().enabled());
 
@@ -24,7 +24,7 @@ impl Hall {
             // Input with pull-up/pull-down
             .mode0().input().cnf0().bits(0b10)
         );
-        gpioa.odr.modify(|_, w| w.odr0().set());
+        gpioa.odr.modify(|_, w| w.odr0().set_bit());
 
 
         tim2.psc.write(|w| w.psc().bits(((::hw::FREQUENCY / ::hw::HALL_TICK_FREQUENCY) - 1) as u16));
@@ -43,9 +43,9 @@ impl Hall {
         // Slave mode -- reset on capture
         tim2.ccer.write(|w| w
             // Trigger polarity: falling
-            .cc1p().set()
+            .cc1p().set_bit()
             // Enable channel
-            .cc1e().set());
+            .cc1e().set_bit());
 
         // FIXME: make trigger safe!
         tim2.smcr.write(|w| w
@@ -54,28 +54,28 @@ impl Hall {
             .ts().ti1fp1());
 
         tim2.dier.write(|w| w
-            .uie().set()
-            .cc1ie().set());
+            .uie().set_bit()
+            .cc1ie().set_bit());
 
         tim2.cr1.write(|w| w
             .ckd().div1()
             .dir().up()
             // Only counter overflow/underflow generates an update interrupt
             // reload_timer() should not generate an event.
-            .urs().set()
+            .urs().set_bit()
             .cen().enabled());
     }
 
-    pub fn interrupt(&mut self, tim2: &Tim2) {
-        if tim2.sr.read().cc1if().is_set() {
-            tim2.sr.modify(|_, w| w.cc1if().clear());
+    pub fn interrupt(&mut self, tim2: &TIM2) {
+        if tim2.sr.read().cc1if().bit_is_set() {
+            tim2.sr.modify(|_, w| w.cc1if().clear_bit());
 
             let lsb = tim2.ccr1.read().bits();
             // Captured value is very low and overflow is pending -- need to account for "msb" increment, as it happened
             // before the capture event. Otherwise, we don't care -- if overflow interrupt is pending, we will handle
             // it on the next handler invocation.
             if lsb < MIN_PERIOD && tim2.sr.read().uif().is_pending() {
-                tim2.sr.modify(|_, w| w.uif().clear());
+                tim2.sr.modify(|_, w| w.uif().clear_bit());
                 // Capture happened just after the overflow: need to increment upper "msb"
                 self.msb += 1;
             }
