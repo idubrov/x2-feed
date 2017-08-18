@@ -9,7 +9,7 @@ all:
 	$(MAKE) doc
 
 build:
-	$(CARGO) $(CARGO_OPTS) build --features cortex-m-rt/panic-over-semihosting
+	$(CARGO) $(CARGO_OPTS) build
 
 build.rel:
 	$(CARGO) $(CARGO_OPTS) build --release
