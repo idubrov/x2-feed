@@ -5,4 +5,4 @@ jobs:
       - image: idubrov/rust-stm32:latest
     steps:
       - checkout
-      - run: xargo build
+      - run: xargo build --verbose
