@@ -11,8 +11,6 @@ pub mod stepper;
 pub mod controls;
 pub mod hall;
 
-extern crate stepgen;
-
 use stm32f103xx::{GPIOA, GPIOB};
 
 pub const FREQUENCY: u32 = 72_000_000;

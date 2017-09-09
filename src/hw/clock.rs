@@ -1,6 +1,3 @@
-extern crate stm32f103xx;
-extern crate cortex_m;
-
 use stm32f103xx::{RCC, FLASH, SYST};
 
 fn wait_condition<F>(syst: &SYST, f: F) -> bool

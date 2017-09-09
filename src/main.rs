@@ -18,7 +18,6 @@
 //! See PCB (Eagle CAD) in the [pcb/](pcb/) directory.
 
 extern crate cortex_m;
-extern crate cortex_m_rt;
 extern crate stm32f103xx;
 extern crate stepgen;
 extern crate hd44780;
@@ -298,7 +297,7 @@ fn handle_ipm(state: &mut State, input: controls::State, t: &mut Threshold, r: &
     // FIXME: divide after shift?
     let speed = (((ipm << 8) as u32) * PITCH * STEPS_PER_ROTATION * MICROSTEPS) / 60;
     if state.speed != speed {
-        stepper_command(t, r, |mut s, _| { s.set_speed(speed) }).unwrap();
+        stepper_command(t, r, |s, _| { s.set_speed(speed) }).unwrap();
         state.speed = speed;
     }
     state.ipm = ipm
@@ -308,17 +307,17 @@ fn handle_feed(state: &mut State, input: controls::State, t: &mut Threshold, r: 
     match (state.run_state, input.left, input.right) {
         (RunState::Stopped, true, false) => {
             // FIXME: ideally, we should have "move left" command instead of using "-infinity" and "+infinity"
-            stepper_command(t, r, |mut s, d| { s.move_to(d, -1000000000); });
+            stepper_command(t, r, |s, d| { s.move_to(d, -1000000000); });
             state.run_state = RunState::Running;
         }
 
         (RunState::Stopped, false, true) => {
-            stepper_command(t, r, |mut s, d| { s.move_to(d, 1000000000); });
+            stepper_command(t, r, |s, d| { s.move_to(d, 1000000000); });
             state.run_state = RunState::Running;
         }
 
         (RunState::Running, false, false) => {
-            stepper_command(t, r, |mut s, _| s.stop());
+            stepper_command(t, r, |s, _| s.stop());
             state.run_state = RunState::Stopping;
         }
 
