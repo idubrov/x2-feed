@@ -2,6 +2,9 @@
 #![feature(used)]
 #![feature(proc_macro)]
 #![no_std]
+#![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#![cfg_attr(feature = "cargo-clippy", allow(eq_op))]
+#![deny(warnings)]
 
 //! Stepper-motor based power feed for X2 mill.
 //!

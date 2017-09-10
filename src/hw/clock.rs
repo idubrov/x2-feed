@@ -12,10 +12,10 @@ fn wait_condition<F>(syst: &SYST, f: F) -> bool
     true
 }
 
-/// Enables HSE oscillator (assumes 8Mhz crystal).
-/// Enables PLL with multiplier of 9 (72Mhz)
-/// Sets up SYSCLK to use PLL as a source
-/// Sets up SysTick to run at 1ms period.
+/// Enables `HSE` oscillator (assumes 8Mhz crystal).
+/// Enables `PLL` with multiplier of 9 (72Mhz)
+/// Sets up `SYSCLK` to use `PLL` as a source
+/// Sets up `SysTick` to run at 1ms period.
 pub fn setup(rcc: &RCC, syst: &SYST, flash: &FLASH) {
     if rcc.cr.read().pllrdy().is_locked() {
         panic!("PLL must be unlocked at this moment!");
