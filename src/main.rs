@@ -63,55 +63,6 @@ app! {
     },
 }
 
-/*
-tasks!(stm32f103xx, {
-    step_completed: Task {
-        interrupt: Tim1UpTim10,
-        priority: P4,
-        enabled: true,
-    },
-    hall_interrupt: Task {
-        interrupt: Tim2,
-        priority: P2,
-        enabled: true,
-    },
-});
-
-peripherals!(stm32f103xx, {
-    RCC: Peripheral {
-        register_block: Rcc,
-        ceiling: C0,
-    },
-    SYST: Peripheral {
-        register_block: SYST,
-        ceiling: C0,
-    },
-    FLASH: Peripheral {
-        register_block: Flash,
-        ceiling: C0,
-    },
-    TIM1: Peripheral {
-        register_block: Tim1,
-        ceiling: C4,
-    },
-    TIM2: Peripheral {
-        register_block: Tim2,
-        ceiling: C2,
-    },
-    TIM3: Peripheral {
-        register_block: Tim3,
-        ceiling: C0,
-    },
-    GPIOA: Peripheral {
-        register_block: GPIOA,
-        ceiling: C4,
-    },
-    GPIOB: Peripheral {
-        register_block: GPIOB,
-        ceiling: C0,
-    },
-});*/
-
 fn passivate(gpioa: &GPIOA, gpiob: &GPIOB) {
     // Pull down remaining inputs on GPIOA and GPIOB
     // PA12
@@ -189,8 +140,7 @@ fn stepper_command<T, CB>(t: &mut Threshold, r: &mut idle::Resources, cb: CB) ->
         tim1.claim(t, |tim1, t| {
             gpioa.claim(t, |gpioa, _t| {
                 let driver = DRIVER.materialize(tim1, gpioa);
-                let result = cb(stepper, &driver);
-                result
+                cb(stepper, &driver)
             })
         })
     })
@@ -234,7 +184,7 @@ fn update_screen(state: &State, r: &idle::Resources) {
     write!(&mut lcd, "{: >4} RPM", rrpm).unwrap();
 
     lcd.position(0, 1);
-    write!(&mut lcd, "{}{: >3} IPM", if state.fast { 'F' } else { ' ' }, (state.ipm + 1) as u32).unwrap();
+    write!(&mut lcd, "{}{: >3} IPM", if state.fast { 'F' } else { ' ' }, u32::from(state.ipm + 1)).unwrap();
 }
 
 fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
@@ -294,8 +244,8 @@ fn handle_ipm(state: &mut State, input: controls::State, t: &mut Threshold, r: &
         _ => {}
     }
     // Update stepper speed based on current setting
-    // FIXME: divide after shift?
-    let speed = (((ipm << 8) as u32) * PITCH * STEPS_PER_ROTATION * MICROSTEPS) / 60;
+    // Shift by 8 to convert to 24.8 format
+    let speed = (u32::from(ipm << 8) * PITCH * STEPS_PER_ROTATION * MICROSTEPS) / 60;
     if state.speed != speed {
         stepper_command(t, r, |s, _| { s.set_speed(speed) }).unwrap();
         state.speed = speed;
@@ -306,13 +256,14 @@ fn handle_ipm(state: &mut State, input: controls::State, t: &mut Threshold, r: &
 fn handle_feed(state: &mut State, input: controls::State, t: &mut Threshold, r: &mut idle::Resources) {
     match (state.run_state, input.left, input.right) {
         (RunState::Stopped, true, false) => {
-            // FIXME: ideally, we should have "move left" command instead of using "-infinity" and "+infinity"
-            stepper_command(t, r, |s, d| { s.move_to(d, -1000000000); });
+            // Use very low number for moving left
+            stepper_command(t, r, |s, d| { s.move_to(d, -1_000_000_000); });
             state.run_state = RunState::Running;
         }
 
         (RunState::Stopped, false, true) => {
-            stepper_command(t, r, |s, d| { s.move_to(d, 1000000000); });
+            // Use very high number for moving right
+            stepper_command(t, r, |s, d| { s.move_to(d, 1_000_000_000); });
             state.run_state = RunState::Running;
         }
 

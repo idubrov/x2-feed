@@ -35,10 +35,13 @@ impl Stepper {
         self.stepgen.set_acceleration(acceleration)
     }
 
-    /// Set slew speed (maximum speed stepper motor would run). Note that stepper motor would only
-    /// reach this speed if target step is far enough, so there is enough time for deceleration.
-    /// FIXME: no Javadoc!
-    /// @param speed target slew speed to reach, in steps per second, 24.8 format
+    /// Set slew speed (maximum speed stepper motor would run).
+    ///
+    /// Sets desired slew speed, a maximum speed stepper motor would accelerate to. Note that
+    /// stepper motor would only reach this speed if destination step is far enough, so there is
+    /// enough time for deceleration.
+    ///
+    /// * `speed` - target slew speed to reach, in steps per second, 24.8 format
     pub fn set_speed(&mut self, speed: u32) -> stepgen::Result {
         self.stepgen.set_target_speed(speed)
     }
@@ -97,7 +100,6 @@ impl Stepper {
 
     /// Move to given position. Note that no new move commands will be accepted while stepper is
     /// running. However, other target parameter, target speed, could be changed any time.
-    /// FIXME: technically, we can actually change target on the fly...
     pub fn move_to(&mut self, driver: &Driver, target: i32) -> bool {
         if !driver.check_stopped() {
             return false;
@@ -124,7 +126,6 @@ impl Stepper {
             return false;
         }
 
-        // FIXME: should be configurable (disable/not disable outputs at the end of the move)...
         // Enable driver outputs
         driver.enable();
         driver.reload_timer();
@@ -135,7 +136,7 @@ impl Stepper {
         // Start pulse generation
         driver.start(is_last);
 
-        return true;
+        true
     }
 
 

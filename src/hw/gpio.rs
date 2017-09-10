@@ -24,8 +24,8 @@ impl<T> PinRange<T>
     }
 
     pub fn set(&self, port: &T, data: u16) {
-        let bits = (data & self.mask) as u32 | // Set '1's
-            ((!data & self.mask) as u32) << 16; // Clear '0's
+        let bits = u32::from(data & self.mask) | // Set '1's
+            (u32::from(!data & self.mask) << 16); // Clear '0's
         port.bsrr.write(|w| unsafe { w.bits(bits << self.shift) });
     }
 

@@ -48,7 +48,7 @@ pub const RIGHT: gpio::PinRange<GPIOA> = gpio::PinRange::new(2, 1);
 pub const FAST: gpio::PinRange<GPIOA> = gpio::PinRange::new(3, 1);
 
 // Hall
-pub const HALL_TICK_FREQUENCY: u32 = 100000; // 0.01 ms
+pub const HALL_TICK_FREQUENCY: u32 = 100_000; // 0.01 ms
 pub const HALL_MAX_RPM: u32 = 6000;
 pub const HALL_MIN_RPM: u32 = 50;
 

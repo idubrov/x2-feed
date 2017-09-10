@@ -54,7 +54,7 @@ impl<'a> hd44780::Hardware for LcdHw<'a> {
     }
 
     fn data(&self, data: u8) {
-        ::hw::DATA.set(self.gpiob, data as u16);
+        ::hw::DATA.set(self.gpiob, u16::from(data));
     }
 
     fn delay_us(&self, delay: u32) {

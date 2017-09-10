@@ -1,8 +1,8 @@
 use stm32f103xx::{GPIOA, TIM1, RCC};
 
 const fn ns2ticks(ns: u32) -> u16 {
-    const NANOS_IN_SECOND: u32 = 1000000000 / ::hw::DRIVER_TICK_FREQUENCY;
-    return ((ns + NANOS_IN_SECOND - 1) / NANOS_IN_SECOND) as u16;
+    const NANOS_IN_SECOND: u32 = 1_000_000_000 / ::hw::DRIVER_TICK_FREQUENCY;
+    ((ns + NANOS_IN_SECOND - 1) / NANOS_IN_SECOND) as u16
 }
 
 const STEP_PULSE_WIDTH_TICKS: u16 = ns2ticks(75);

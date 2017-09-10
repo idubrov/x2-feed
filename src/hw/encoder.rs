@@ -10,7 +10,7 @@ impl Encoder {
     pub fn init(&self, tim3: &TIM3, gpioa: &GPIOA, rcc: &RCC) {
         rcc.apb1enr.modify(|_, w| w.tim3en().enabled());
         rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
-        rcc.apb2enr.modify(|_, w| w.afioen().enabled()); // FIXME: Do we need this?
+        rcc.apb2enr.modify(|_, w| w.afioen().enabled());
 
 
         // CNF of '1' is floating input
@@ -39,7 +39,7 @@ impl Encoder {
         tim3.arr.write(|w| w.arr().bits((limit * 2) - 1));
     }
 
-    pub fn current(&self, tim3: &TIM3) -> u16{
+    pub fn current(&self, tim3: &TIM3) -> u16 {
         tim3.cnt.read().cnt().bits() / 2
     }
 
