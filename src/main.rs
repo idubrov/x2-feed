@@ -34,6 +34,7 @@ use core::fmt::Write;
 use rtfm::{app, Threshold};
 
 mod hw;
+mod font;
 
 static LCD: lcd::Lcd = lcd::Lcd::new();
 static LED: led::Led = led::Led::new();
@@ -153,7 +154,8 @@ fn stepper_command<T, CB>(t: &mut Threshold, r: &mut idle::Resources, cb: CB) ->
 enum RunState {
     Stopped,
     Stopping,
-    Running
+    RunningLeft,
+    RunningRight
 }
 
 
@@ -177,6 +179,7 @@ fn init_screen(r: &idle::Resources) {
     let mut lcd = LCD.materialize(r.SYST, r.GPIOB);
     lcd.init();
     lcd.display(hd44780::DisplayMode::DisplayOn, hd44780::DisplayCursor::CursorOff, hd44780::DisplayBlink::BlinkOff);
+    font::upload_characters(&mut lcd);
     lcd.entry_mode(hd44780::EntryModeDirection::EntryRight, hd44780::EntryModeShift::NoShift);
 }
 
@@ -187,7 +190,15 @@ fn update_screen(state: &State, r: &idle::Resources) {
     write!(&mut lcd, "{: >4} RPM", rrpm).unwrap();
 
     lcd.position(0, 1);
-    write!(&mut lcd, "{}{: >3} IPM", if state.fast { 'F' } else { ' ' }, u32::from(state.ipm + 1)).unwrap();
+    let s = (state.fast, state.run_state);
+    let c = match s {
+        (false, RunState::RunningLeft) => font::LEFT,
+        (false, RunState::RunningRight) => font::RIGHT,
+        (true, RunState::RunningLeft) => font::FAST_LEFT,
+        (true, RunState::RunningRight) => font::FAST_RIGHT,
+        _ => ' '
+    };
+    write!(&mut lcd, "{}{: >3} IPM", c, u32::from(state.ipm + 1)).unwrap();
 }
 
 fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
@@ -261,16 +272,16 @@ fn handle_feed(state: &mut State, input: controls::State, t: &mut Threshold, r: 
         (RunState::Stopped, true, false) => {
             // Use very low number for moving left
             stepper_command(t, r, |s, d| { s.move_to(d, -1_000_000_000); });
-            state.run_state = RunState::Running;
+            state.run_state = RunState::RunningLeft;
         }
 
         (RunState::Stopped, false, true) => {
             // Use very high number for moving right
             stepper_command(t, r, |s, d| { s.move_to(d, 1_000_000_000); });
-            state.run_state = RunState::Running;
+            state.run_state = RunState::RunningRight;
         }
 
-        (RunState::Running, false, false) => {
+        (RunState::RunningLeft, false, false) | (RunState::RunningRight, false, false) => {
             stepper_command(t, r, |s, _| s.stop());
             state.run_state = RunState::Stopping;
         }
