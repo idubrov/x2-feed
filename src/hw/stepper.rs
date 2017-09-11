@@ -46,21 +46,21 @@ impl Stepper {
         self.stepgen.set_target_speed(speed)
     }
 
-    // FIXME: use option
-    fn load_delay(&mut self, driver: &Driver) -> u32 {
+    /// Returns `false` no new delay was loaded
+    fn load_delay(&mut self, driver: &Driver) -> bool {
         match self.stepgen.next() {
             Some(delay) => {
                 // Load new step into ARR, start pulse at the end
                 let d = (delay + 128) >> 8; // Delay is in 16.8 format
                 driver.set_delay(d as u16);
-                delay
+                true
             },
             None => {
                 // FIXME: do we need this branch?
                 // Load idle values. This is important to do on the last update
                 // when timer is switched into one-pulse mode.
                 driver.set_delay(1 /* FIXME: IDLE delay */);
-                0
+                false
             }
         }
     }
@@ -76,7 +76,7 @@ impl Stepper {
             self.stop_requested = false;
         }
 
-        if self.load_delay(driver) == 0 {
+        if !self.load_delay(driver) {
             // Stop on the next update, one pulse mode
             // Note that load_delay() should have already loaded ARR and
             // CCR1 with idle values.
@@ -125,7 +125,7 @@ impl Stepper {
         self.stop_requested = false;
 
         // Load first delay into ARR/CC1, if not stopped
-        if self.load_delay(driver) == 0 {
+        if !self.load_delay(driver) {
             // Not making even a single step
             return false;
         }
@@ -135,7 +135,7 @@ impl Stepper {
         driver.reload_timer();
 
         // Load second delay into ARR & CC1.
-        let is_last = self.load_delay(driver) == 0;
+        let is_last = !self.load_delay(driver);
 
         // Start pulse generation
         driver.start(is_last);
