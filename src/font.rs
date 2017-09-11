@@ -1,6 +1,6 @@
 //! Custom LCD characters for the powerfeed
-extern crate hd44780;
-use hw::lcd;
+extern crate lcd;
+use hw::hwlcd;
 
 pub const LEFT : char = 1 as char;
 pub const RIGHT : char = 2 as char;
@@ -55,7 +55,7 @@ const FAST_RIGHT_CHAR: [u8; 8] = [
     0b01000
 ];
 
-pub fn upload_characters(lcd : &mut hd44780::HD44780<lcd::LcdHw>) {
+pub fn upload_characters(lcd : &mut lcd::HD44780<hwlcd::LcdHw>) {
     lcd.upload_character(1, LEFT_CHAR);
     lcd.upload_character(2, RIGHT_CHAR);
     lcd.upload_character(3, FAST_LEFT_CHAR);

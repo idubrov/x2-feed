@@ -3,7 +3,7 @@
 pub mod gpio;
 pub mod clock;
 pub mod delay;
-pub mod lcd;
+pub mod hwlcd;
 pub mod led;
 pub mod encoder;
 pub mod driver;

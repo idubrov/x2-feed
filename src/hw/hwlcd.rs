@@ -1,4 +1,4 @@
-extern crate hd44780;
+extern crate lcd;
 
 use stm32f103xx::{GPIOB, SYST, RCC};
 
@@ -30,8 +30,8 @@ impl Lcd {
         ::hw::RW.set(gpiob, 0);
     }
 
-    pub fn materialize<'a>(&self, syst: &'a SYST, gpiob: &'a GPIOB) -> hd44780::HD44780<LcdHw<'a>> {
-        hd44780::HD44780::new(LcdHw {
+    pub fn materialize<'a>(&self, syst: &'a SYST, gpiob: &'a GPIOB) -> lcd::HD44780<LcdHw<'a>> {
+        lcd::HD44780::new(LcdHw {
             syst,
             gpiob,
         })
@@ -44,7 +44,7 @@ pub struct LcdHw<'a> {
     gpiob: &'a GPIOB,
 }
 
-impl<'a> hd44780::Hardware for LcdHw<'a> {
+impl<'a> lcd::Hardware for LcdHw<'a> {
     fn rs(&self, bit: bool) {
         ::hw::RS.set(self.gpiob, if bit { 1 } else { 0 });
     }

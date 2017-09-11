@@ -23,12 +23,12 @@
 extern crate cortex_m;
 extern crate stm32f103xx;
 extern crate stepgen;
-extern crate hd44780;
+extern crate lcd;
 
 extern crate cortex_m_rtfm as rtfm;
 
 use stm32f103xx::{SYST, GPIOA, GPIOB};
-use hw::{delay, clock, lcd, led, encoder, driver, stepper, controls, hall, ESTOP};
+use hw::{delay, clock, hwlcd, led, encoder, driver, stepper, controls, hall, ESTOP};
 use core::fmt::Write;
 
 use rtfm::{app, Threshold};
@@ -36,7 +36,7 @@ use rtfm::{app, Threshold};
 mod hw;
 mod font;
 
-static LCD: lcd::Lcd = lcd::Lcd::new();
+static LCD: hwlcd::Lcd = hwlcd::Lcd::new();
 static LED: led::Led = led::Led::new();
 static ENC: encoder::Encoder = encoder::Encoder::new();
 static DRIVER: driver::DriverRef = driver::DriverRef::new();
@@ -116,7 +116,7 @@ fn init(p: init::Peripherals, r: init::Resources) {
     r.STEPPER.set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap();
 }
 
-fn estop(syst: &SYST, lcd: &mut hd44780::HD44780<lcd::LcdHw>) -> ! {
+fn estop(syst: &SYST, lcd: &mut lcd::HD44780<hwlcd::LcdHw>) -> ! {
     ::delay::ms(syst, 1); // Wait till power is back to normal
 
     // Immediately disable driver outputs
@@ -178,9 +178,9 @@ struct State {
 fn init_screen(r: &idle::Resources) {
     let mut lcd = LCD.materialize(r.SYST, r.GPIOB);
     lcd.init();
-    lcd.display(hd44780::DisplayMode::DisplayOn, hd44780::DisplayCursor::CursorOff, hd44780::DisplayBlink::BlinkOff);
+    lcd.display(lcd::DisplayMode::DisplayOn, lcd::DisplayCursor::CursorOff, lcd::DisplayBlink::BlinkOff);
     font::upload_characters(&mut lcd);
-    lcd.entry_mode(hd44780::EntryModeDirection::EntryRight, hd44780::EntryModeShift::NoShift);
+    lcd.entry_mode(lcd::EntryModeDirection::EntryRight, lcd::EntryModeShift::NoShift);
 }
 
 fn update_screen(state: &State, r: &idle::Resources) {

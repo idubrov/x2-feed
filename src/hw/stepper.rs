@@ -46,19 +46,23 @@ impl Stepper {
         self.stepgen.set_target_speed(speed)
     }
 
+    // FIXME: use option
     fn load_delay(&mut self, driver: &Driver) -> u32 {
-        let delay = self.stepgen.next();
-        if delay != 0 {
-            // Load new step into ARR, start pulse at the end
-            let d = (delay + 128) >> 8; // Delay is in 16.8 format
-            driver.set_delay(d as u16);
-        } else {
-            // FIXME: do we need this branch?
-            // Load idle values. This is important to do on the last update
-            // when timer is switched into one-pulse mode.
-            driver.set_delay(1 /* FIXME: IDLE delay */);
+        match self.stepgen.next() {
+            Some(delay) => {
+                // Load new step into ARR, start pulse at the end
+                let d = (delay + 128) >> 8; // Delay is in 16.8 format
+                driver.set_delay(d as u16);
+                delay
+            },
+            None => {
+                // FIXME: do we need this branch?
+                // Load idle values. This is important to do on the last update
+                // when timer is switched into one-pulse mode.
+                driver.set_delay(1 /* FIXME: IDLE delay */);
+                0
+            }
         }
-        delay
     }
 
     pub fn step_completed(&mut self, driver: &Driver) {
