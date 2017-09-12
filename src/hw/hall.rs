@@ -35,7 +35,8 @@ impl Hall {
         tim2.psc.write(|w| w.psc().bits(((::hw::FREQUENCY / ::hw::HALL_TICK_FREQUENCY) - 1) as u16));
         tim2.arr.write(|w| w.arr().bits(0xffffu16));
 
-        // FIXME: no enumeratedValue in STM32F103.SVD
+        // Only output register is supported, see https://github.com/japaric/svd2rust/issues/16
+        // Also, enumerations are not defined for the input register in SVD file.
         let ccmr1 =
                 // CC1 channel is configured as input, IC1 is mapped on TI1
                 0b01 |
