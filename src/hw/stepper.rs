@@ -14,7 +14,6 @@ pub struct Stepper {
     position: i32,
 
     // Stop signal
-    // FIXME: atomic/refcell?
     stop_requested: bool,
 }
 
@@ -51,6 +50,7 @@ impl Stepper {
         match self.stepgen.next() {
             Some(delay) => {
                 // Load new step into ARR, start pulse at the end
+                // FIXME: keep the fraction part, so we don't accumulate error?
                 let d = (delay + 128) >> 8; // Delay is in 16.8 format
                 driver.set_delay(d as u16);
                 true

@@ -27,8 +27,7 @@ impl Controls {
         );
     }
 
-    pub fn get(&self) -> State {
-        let gpioa = unsafe { &(*GPIOA.get()) };
+    pub fn get(&self, gpioa: &GPIOA) -> State {
         let values = gpioa.idr.read().bits();
 
         let left = ((values >> LEFT.shift) as u16) & LEFT.mask;

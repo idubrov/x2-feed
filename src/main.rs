@@ -30,8 +30,7 @@ extern crate cortex_m_rtfm as rtfm;
 use stm32f103xx::{SYST, GPIOA, GPIOB};
 use hw::{delay, clock, hwlcd, led, encoder, driver, stepper, controls, hall, ESTOP};
 use core::fmt::Write;
-
-use rtfm::{app, Threshold};
+use rtfm::{app, Threshold, Resource};
 
 mod hw;
 mod font;
@@ -134,7 +133,6 @@ fn estop(syst: &SYST, lcd: &mut lcd::HD44780<hwlcd::LcdHw>) -> ! {
 fn stepper_command<T, CB>(t: &mut Threshold, r: &mut idle::Resources, cb: CB) -> T
     where
         CB: for<'a> FnOnce(&mut stepper::Stepper, &driver::Driver) -> T {
-    use rtfm::Resource;
 
     let stepper = &mut r.STEPPER;
     let tim1 = &r.TIM1;
@@ -227,7 +225,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
             }
         }
 
-        let input = CONTROLS.get();
+        let input = r.GPIOA.claim(t, |gpioa, _t| CONTROLS.get(gpioa));
         handle_ipm(&mut state, input, t, &mut r);
         handle_feed(&mut state, input, t, &mut r);
         handle_rpm(&mut state, t, &r);
