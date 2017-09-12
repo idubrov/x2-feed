@@ -177,7 +177,7 @@ struct State {
 
 fn init_screen(r: &idle::Resources) {
     let mut lcd = LCD.materialize(r.SYST, r.GPIOB);
-    lcd.init();
+    lcd.init(lcd::FunctionLine::Line2, lcd::FunctionDots::Dots5x8);
     lcd.display(lcd::DisplayMode::DisplayOn, lcd::DisplayCursor::CursorOff, lcd::DisplayBlink::BlinkOff);
     font::upload_characters(&mut lcd);
     lcd.entry_mode(lcd::EntryModeDirection::EntryRight, lcd::EntryModeShift::NoShift);

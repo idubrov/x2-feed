@@ -56,8 +56,10 @@ impl<'a> lcd::Hardware for LcdHw<'a> {
     fn data(&self, data: u8) {
         ::hw::DATA.set(self.gpiob, u16::from(data));
     }
+}
 
-    fn delay_us(&self, delay: u32) {
-        ::hw::delay::us(self.syst, delay);
+impl<'a> lcd::Delay for LcdHw<'a> {
+    fn delay_us(&self, delay_usec: u32) {
+        ::hw::delay::us(self.syst, delay_usec);
     }
 }
