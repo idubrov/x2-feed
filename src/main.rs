@@ -115,7 +115,7 @@ fn init(p: init::Peripherals, r: init::Resources) {
     r.STEPPER.set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap();
 }
 
-fn estop(syst: &SYST, lcd: &mut lcd::HD44780<hwlcd::LcdHw>) -> ! {
+fn estop(syst: &SYST, lcd: &mut lcd::Display<hwlcd::LcdHw>) -> ! {
     ::delay::ms(syst, 1); // Wait till power is back to normal
 
     // Immediately disable driver outputs

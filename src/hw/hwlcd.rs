@@ -30,8 +30,8 @@ impl Lcd {
         ::hw::RW.set(gpiob, 0);
     }
 
-    pub fn materialize<'a>(&self, syst: &'a SYST, gpiob: &'a GPIOB) -> lcd::HD44780<LcdHw<'a>> {
-        lcd::HD44780::new(LcdHw {
+    pub fn materialize<'a>(&self, syst: &'a SYST, gpiob: &'a GPIOB) -> lcd::Display<LcdHw<'a>> {
+        lcd::Display::new(LcdHw {
             syst,
             gpiob,
         })

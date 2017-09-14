@@ -55,7 +55,7 @@ const FAST_RIGHT_CHAR: [u8; 8] = [
     0b01000
 ];
 
-pub fn upload_characters(lcd : &mut lcd::HD44780<hwlcd::LcdHw>) {
+pub fn upload_characters(lcd : &mut lcd::Display<hwlcd::LcdHw>) {
     lcd.upload_character(1, LEFT_CHAR);
     lcd.upload_character(2, RIGHT_CHAR);
     lcd.upload_character(3, FAST_LEFT_CHAR);
