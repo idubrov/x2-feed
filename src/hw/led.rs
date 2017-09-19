@@ -1,4 +1,6 @@
+#![allow(dead_code)]
 use stm32f103xx::{GPIOA, RCC};
+use hw::config::LED;
 
 pub struct Led;
 
@@ -8,10 +10,10 @@ impl Led {
 
         // PA4 is LED
         gpioa.crl.modify(|_, w| w.cnf4().open().mode4().output2());
-        ::hw::LED.set(gpioa, 1); // Turn it off
+        LED.set(gpioa, 1); // Turn it off
     }
 
     pub fn set<'a>(&self, gpioa: &'a GPIOA, on: bool) {
-        ::hw::LED.set(gpioa, if on { 0 } else { 1 }); // '0' is on
+        LED.set(gpioa, if on { 0 } else { 1 }); // '0' is on
     }
 }

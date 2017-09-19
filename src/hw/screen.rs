@@ -1,5 +1,6 @@
 extern crate lcd;
 
+use hw::config::{RS, RW, E, DATA};
 use stm32f103xx::{GPIOB, SYST, RCC};
 
 pub struct Screen;
@@ -22,7 +23,7 @@ impl Screen {
             .cnf15().push().mode15().output());
 
         // R/W is always 0 -- we don't use wait flag
-        ::hw::RW.set(gpiob, 0);
+        RW.set(gpiob, 0);
     }
 
     pub fn materialize<'a>(&self, syst: &'a SYST, gpiob: &'a GPIOB) -> lcd::Display<ScreenHAL<'a>> {
@@ -41,15 +42,15 @@ pub struct ScreenHAL<'a> {
 
 impl<'a> lcd::Hardware for ScreenHAL<'a> {
     fn rs(&self, bit: bool) {
-        ::hw::RS.set(self.gpiob, if bit { 1 } else { 0 });
+        RS.set(self.gpiob, if bit { 1 } else { 0 });
     }
 
     fn enable(&self, bit: bool) {
-        ::hw::E.set(self.gpiob, if bit { 1 } else { 0 });
+        E.set(self.gpiob, if bit { 1 } else { 0 });
     }
 
     fn data(&self, data: u8) {
-        ::hw::DATA.set(self.gpiob, u16::from(data));
+        DATA.set(self.gpiob, u16::from(data));
     }
 }
 

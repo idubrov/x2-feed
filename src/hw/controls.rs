@@ -1,4 +1,4 @@
-use hw::{LEFT, RIGHT, FAST};
+use hw::config::{LEFT, RIGHT, FAST};
 
 use stm32f103xx::{GPIOA, RCC};
 

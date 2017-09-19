@@ -1,31 +1,51 @@
 use stepgen;
 
-use hw::driver::Driver;
+use hw::config::DRIVER_TICK_FREQUENCY;
+use hal::stepper::Driver;
+
+#[derive(Clone, Copy, PartialEq)]
+enum State {
+    /// Not stepping
+    Stopped,
+    /// Stepping and stop command was requested
+    StopRequested,
+    /// Stopping the motor
+    Stopping,
+    /// Running in the negative direction (`direction` is `false`)
+    RunningNegative,
+    /// Running in the positive direction (`direction` is `true`)
+    RunningPositive,
+}
 
 pub struct Stepper {
     // If should reverse direction signal
+    // FIXME: remove...
     reverse: bool,
 
-    // Current state
     stepgen: stepgen::Stepgen,
     direction: bool,
 
     base_step: u32,
     position: i32,
 
-    // Stop signal
-    stop_requested: bool,
+    state: State,
+}
+
+// Round value from 16.8 format to u16
+fn round16_8(delay: u32) -> u16 {
+    let d = (delay + 128) >> 8;
+    d as u16
 }
 
 impl Stepper {
     pub const fn new() -> Stepper {
         Stepper {
             reverse: true,
-            stepgen: stepgen::Stepgen::new(::hw::DRIVER_TICK_FREQUENCY),
+            stepgen: stepgen::Stepgen::new(DRIVER_TICK_FREQUENCY),
             direction: true,
             base_step: 0,
             position: 0,
-            stop_requested: false,
+            state: State::Stopped,
         }
     }
 
@@ -46,42 +66,31 @@ impl Stepper {
     }
 
     /// Returns `false` no new delay was loaded
-    fn load_delay(&mut self, driver: &Driver) -> bool {
+    fn preload_delay(&mut self, driver: &mut Driver) {
         match self.stepgen.next() {
-            Some(delay) => {
-                // Load new step into ARR, start pulse at the end
-                // FIXME: keep the fraction part, so we don't accumulate error?
-                let d = (delay + 128) >> 8; // Delay is in 16.8 format
-                driver.set_delay(d as u16);
-                true
-            },
-            None => {
-                // FIXME: do we need this branch?
-                // Load idle values. This is important to do on the last update
-                // when timer is switched into one-pulse mode.
-                driver.set_delay(1 /* FIXME: IDLE delay */);
-                false
-            }
+            Some(delay) => driver.preload_delay(round16_8(delay)),
+            None => driver.set_last(),
         }
     }
 
-    pub fn step_completed(&mut self, driver: &Driver) {
-        if driver.check_stopped() {
-            driver.disable();
-            return;
-        }
-
-        if self.stop_requested {
-            self.stepgen.set_target_step(0);
-            self.stop_requested = false;
-        }
-
-        if !self.load_delay(driver) {
-            // Stop on the next update, one pulse mode
-            // Note that load_delay() should have already loaded ARR and
-            // CCR1 with idle values.
-            driver.set_last_pulse();
-        }
+    pub fn step_completed(&mut self, driver: &mut Driver) {
+        match self.state {
+            State::StopRequested => {
+                // Initiate stopping sequence -- set target step to 0
+                self.stepgen.set_target_step(0);
+                self.state = State::Stopping
+            },
+            State::Stopping if !driver.is_running() => {
+                driver.enable(false);
+                self.state = State::Stopped;
+                return; // Do not preload the delay -- we are stopped now
+            },
+            State::Stopped =>
+                panic!("Should not receive interrupts when stopped!"),
+            // Nothing otherwise, just preload the delay
+            _ => ()
+        };
+        self.preload_delay(driver);
     }
 
     // Incorporate outstanding steps from the stepgen into current position
@@ -97,15 +106,15 @@ impl Stepper {
         self.position
     }
 
-    fn set_direction(&mut self, driver: &Driver, dir: bool) {
-        driver.set_direction(if self.reverse { dir } else { !dir });
+    fn set_direction(&mut self, driver: &mut Driver, dir: bool) {
+        driver.direction(if self.reverse { dir } else { !dir });
         self.direction = dir;
     }
 
     /// Move to given position. Note that no new move commands will be accepted while stepper is
     /// running. However, other target parameter, target speed, could be changed any time.
-    pub fn move_to(&mut self, driver: &Driver, target: i32) -> bool {
-        if !driver.check_stopped() {
+    pub fn move_to(&mut self, driver: &mut Driver, target: i32) -> bool {
+        if !self.is_stopped() {
             return false;
         }
 
@@ -114,41 +123,39 @@ impl Stepper {
         if pos < target {
             delta = (target - pos) as u32;
             self.set_direction(driver, true);
+            self.state = State::RunningPositive;
         } else if pos > target {
             delta = (pos - target) as u32;
             self.set_direction(driver, false);
+            self.state = State::RunningNegative;
         } else {
             // Nothing to do!
             return true;
         }
         self.stepgen.set_target_step(self.base_step + delta);
-        self.stop_requested = false;
-
-        // Load first delay into ARR/CC1, if not stopped
-        if !self.load_delay(driver) {
-            // Not making even a single step
-            return false;
-        }
 
         // Enable driver outputs
-        driver.enable();
-        driver.reload_timer();
-
-        // Load second delay into ARR & CC1.
-        let is_last = !self.load_delay(driver);
+        driver.enable(true);
 
         // Start pulse generation
-        driver.start(is_last);
+        let delay = self.stepgen.next().unwrap();
+        driver.start(round16_8(delay));
 
+        // Immediately preload the second delay
+        self.preload_delay(driver);
         true
     }
 
 
     pub fn stop(&mut self) {
-        self.stop_requested = true;
+        match self.state {
+            State::RunningNegative | State::RunningPositive =>
+                self.state = State::StopRequested,
+            _ => ()
+        }
     }
 
-    pub fn is_stopped(&self, driver: &Driver) -> bool {
-        driver.check_stopped()
+    pub fn is_stopped(&self) -> bool {
+        self.state == State::Stopped
     }
 }

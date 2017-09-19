@@ -32,10 +32,9 @@ use hw::*;
 use core::fmt::Write;
 use rtfm::{app, Threshold, Resource};
 
+mod hal;
 mod hw;
 mod font;
-
-static DRIVER: driver::DriverRef = driver::DriverRef;
 
 app! {
     device: stm32f103xx,
@@ -91,7 +90,7 @@ fn passivate(gpioa: &GPIOA, gpiob: &GPIOB) {
 }
 
 fn init(p: init::Peripherals, r: init::Resources) {
-    let driver = DRIVER.materialize(p.TIM1, p.GPIOA);
+    let driver = SingletonDriver.materialize(p.TIM1, p.GPIOA);
 
     clock::setup(p.RCC, p.SYST, p.FLASH);
 
@@ -107,7 +106,6 @@ fn init(p: init::Peripherals, r: init::Resources) {
     passivate(p.GPIOA, p.GPIOB);
 
     driver.init(p.RCC);
-    driver.release();
     r.STEPPER.set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap();
 }
 
@@ -115,7 +113,7 @@ fn estop(syst: &SYST, lcd: &mut Display) -> ! {
     ::delay::ms(syst, 1); // Wait till power is back to normal
 
     // Immediately disable driver outputs
-    ::hw::ENABLE.set(unsafe { &(*stm32f103xx::GPIOA.get()) }, 0);
+    ::hw::config::ENABLE.set(unsafe { &(*stm32f103xx::GPIOA.get()) }, 0);
 
     lcd.position(0, 0);
     write!(lcd, "*E-STOP*").unwrap();
@@ -128,7 +126,7 @@ fn estop(syst: &SYST, lcd: &mut Display) -> ! {
 
 fn stepper_command<T, CB>(t: &mut Threshold, r: &mut idle::Resources, cb: CB) -> T
     where
-        CB: for<'a> FnOnce(&mut stepper::Stepper, &driver::Driver) -> T {
+        CB: for<'a> FnOnce(&mut stepper::Stepper, &mut driver::BoundDriver) -> T {
 
     let stepper = &mut r.STEPPER;
     let tim1 = &r.TIM1;
@@ -137,8 +135,8 @@ fn stepper_command<T, CB>(t: &mut Threshold, r: &mut idle::Resources, cb: CB) ->
     stepper.claim_mut(t, |stepper, t| {
         tim1.claim(t, |tim1, t| {
             gpioa.claim(t, |gpioa, _t| {
-                let driver = DRIVER.materialize(tim1, gpioa);
-                cb(stepper, &driver)
+                let mut driver = SingletonDriver.materialize(tim1, gpioa);
+                cb(stepper, &mut driver)
             })
         })
     })
@@ -214,7 +212,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
     };
     Encoder.set_current(r.TIM3, state.slow_ipm - 1);
     loop {
-        if ESTOP.get(r.GPIOB) == 0 {
+        if ::hw::config::ESTOP.get(r.GPIOB) == 0 {
             {
                 let mut lcd = Screen.materialize(r.SYST, r.GPIOB);
                 estop(r.SYST, &mut lcd);
@@ -281,7 +279,7 @@ fn handle_feed(state: &mut State, input: ControlsState, t: &mut Threshold, r: &m
         }
 
         (RunState::Stopping, _, _) => {
-            if stepper_command(t, r, |s, d| s.is_stopped(d)) {
+            if stepper_command(t, r, |s, _| s.is_stopped()) {
                 state.run_state = RunState::Stopped;
             }
         }
@@ -302,12 +300,12 @@ fn handle_rpm(state: &mut State, t: &mut Threshold, r: &idle::Resources) {
 }
 
 fn step_completed(_t: &mut Threshold, r: TIM1_UP_TIM10::Resources) {
-    let driver = DRIVER.materialize(r.TIM1, r.GPIOA);
+    let mut driver = SingletonDriver.materialize(r.TIM1, r.GPIOA);
     let tim1 = &r.TIM1;
 
     if tim1.sr.read().uif().is_pending() {
         tim1.sr.modify(|_, w| w.uif().clear());
-        r.STEPPER.step_completed(&driver);
+        r.STEPPER.step_completed(&mut driver);
     }
 }
 

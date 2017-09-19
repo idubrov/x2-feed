@@ -1,13 +1,15 @@
 use stm32f103xx::{TIM2, GPIOA, RCC};
 
+use hw::config::{FREQUENCY, HALL_TICK_FREQUENCY, HALL_MAX_RPM, HALL_MIN_RPM};
+
 // Compute what could be the shortest period between two hall sensor triggers (fastest RPM).
 // Used to filter the noise and also to account for the case when timer overflowed just before
 // the capture.
-const MIN_PERIOD: u32 = 60 * ::hw::HALL_TICK_FREQUENCY / ::hw::HALL_MAX_RPM;
+const MIN_PERIOD: u32 = 60 * HALL_TICK_FREQUENCY / HALL_MAX_RPM;
 
 // Compute what could be the longest period between two hall sensor triggers (slowest RPM) and take
 // its high 16 bits. If computed period is longer than that, it is assumed that spindle is stopped.
-const MAX_MSB: u32 = ((60 * ::hw::HALL_TICK_FREQUENCY) / ::hw::HALL_MIN_RPM + 0xffffu32) >> 16;
+const MAX_MSB: u32 = ((60 * HALL_TICK_FREQUENCY) / HALL_MIN_RPM + 0xffffu32) >> 16;
 
 pub struct Hall {
     captured: u32,
@@ -32,7 +34,7 @@ impl Hall {
         );
         gpioa.odr.modify(|_, w| w.odr0().set_bit());
 
-        tim2.psc.write(|w| w.psc().bits(((::hw::FREQUENCY / ::hw::HALL_TICK_FREQUENCY) - 1) as u16));
+        tim2.psc.write(|w| w.psc().bits(((FREQUENCY / HALL_TICK_FREQUENCY) - 1) as u16));
         tim2.arr.write(|w| w.arr().bits(0xffffu16));
 
         // Only output register is supported, see https://github.com/japaric/svd2rust/issues/16
@@ -112,6 +114,6 @@ impl Hall {
 
     /// Get latest captured RPM, in 24.8 format
     pub fn rpm(&self) -> u32 {
-        if self.captured != 0 { ((60 * ::hw::HALL_TICK_FREQUENCY) << 8) / self.captured } else { 0 }
+        if self.captured != 0 { ((60 * HALL_TICK_FREQUENCY) << 8) / self.captured } else { 0 }
     }
 }

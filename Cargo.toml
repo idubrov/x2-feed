@@ -24,6 +24,9 @@ features = ["rt"]
 [dependencies.lcd]
 version = "0.2.0"
 
+[dependencies.bare-metal]
+version = "0.1.0"
+
 [profile]
 
 [profile.dev]
