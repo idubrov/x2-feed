@@ -5,15 +5,19 @@ pub mod gpio;
 pub mod clock;
 pub mod delay;
 mod screen;
-pub mod led;
-pub mod encoder;
+mod led;
+mod encoder;
 pub mod driver;
 pub mod stepper;
-pub mod controls;
+mod controls;
 pub mod hall;
 
 pub use self::screen::Screen;
 pub type Display<'a> = lcd::Display<self::screen::ScreenHAL<'a>>;
+pub use self::led::Led;
+pub use self::encoder::Encoder;
+pub use self::controls::Controls;
+pub use self::controls::State as ControlsState;
 
 use stm32f103xx::{GPIOA, GPIOB};
 

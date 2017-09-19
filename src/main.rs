@@ -28,17 +28,14 @@ extern crate lcd;
 extern crate cortex_m_rtfm as rtfm;
 
 use stm32f103xx::{SYST, GPIOA, GPIOB};
-use hw::{delay, clock, Screen, Display, led, encoder, driver, stepper, controls, hall, ESTOP};
+use hw::*;
 use core::fmt::Write;
 use rtfm::{app, Threshold, Resource};
 
 mod hw;
 mod font;
 
-static LED: led::Led = led::Led;
-static ENC: encoder::Encoder = encoder::Encoder;
 static DRIVER: driver::DriverRef = driver::DriverRef;
-static CONTROLS: controls::Controls = controls::Controls;
 
 app! {
     device: stm32f103xx,
@@ -99,12 +96,12 @@ fn init(p: init::Peripherals, r: init::Resources) {
     clock::setup(p.RCC, p.SYST, p.FLASH);
 
     // Initialize hardware
-    LED.init(p.GPIOA, p.RCC);
+    Led.init(p.GPIOA, p.RCC);
     Screen.init(p.GPIOB, p.RCC);
-    ENC.init(p.TIM3, p.GPIOA, p.RCC);
-    ENC.set_current(p.TIM3, 0); // Start with 1 IPM
-    ENC.set_limit(p.TIM3, MAX_IPM);
-    CONTROLS.init(p.GPIOA, p.RCC);
+    Encoder.init(p.TIM3, p.GPIOA, p.RCC);
+    Encoder.set_current(p.TIM3, 0); // Start with 1 IPM
+    Encoder.set_limit(p.TIM3, MAX_IPM);
+    Controls.init(p.GPIOA, p.RCC);
     r.HALL.init(p.TIM2, p.GPIOA, p.RCC);
 
     passivate(p.GPIOA, p.GPIOB);
@@ -215,7 +212,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
         rpm: 0,
         ipm: 0,
     };
-    ENC.set_current(r.TIM3, state.slow_ipm - 1);
+    Encoder.set_current(r.TIM3, state.slow_ipm - 1);
     loop {
         if ESTOP.get(r.GPIOB) == 0 {
             {
@@ -224,7 +221,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
             }
         }
 
-        let input = r.GPIOA.claim(t, |gpioa, _t| CONTROLS.get(gpioa));
+        let input = r.GPIOA.claim(t, |gpioa, _t| Controls.get(gpioa));
         handle_ipm(&mut state, input, t, &mut r);
         handle_feed(&mut state, input, t, &mut r);
         handle_rpm(&mut state, t, &r);
@@ -233,14 +230,14 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
     }
 }
 
-fn handle_ipm(state: &mut State, input: controls::State, t: &mut Threshold, r: &mut idle::Resources) {
-    let mut ipm = ENC.current(r.TIM3) + 1; // Encoder is off by one (as it starts from 0)
+fn handle_ipm(state: &mut State, input: ControlsState, t: &mut Threshold, r: &mut idle::Resources) {
+    let mut ipm = Encoder.current(r.TIM3) + 1; // Encoder is off by one (as it starts from 0)
     match (state.fast, input.fast) {
         (false, true) => {
             // Switch to fast IPM
             state.slow_ipm = ipm;
             ipm = state.fast_ipm;
-            ENC.set_current(r.TIM3, ipm - 1);
+            Encoder.set_current(r.TIM3, ipm - 1);
             state.fast = true;
         }
 
@@ -248,7 +245,7 @@ fn handle_ipm(state: &mut State, input: controls::State, t: &mut Threshold, r: &
             // Switch to slow IPM
             state.fast_ipm = ipm;
             ipm = state.slow_ipm;
-            ENC.set_current(r.TIM3, ipm - 1);
+            Encoder.set_current(r.TIM3, ipm - 1);
             state.fast = false;
         }
 
@@ -264,7 +261,7 @@ fn handle_ipm(state: &mut State, input: controls::State, t: &mut Threshold, r: &
     state.ipm = ipm
 }
 
-fn handle_feed(state: &mut State, input: controls::State, t: &mut Threshold, r: &mut idle::Resources) {
+fn handle_feed(state: &mut State, input: ControlsState, t: &mut Threshold, r: &mut idle::Resources) {
     match (state.run_state, input.left, input.right) {
         (RunState::Stopped, true, false) => {
             // Use very low number for moving left
