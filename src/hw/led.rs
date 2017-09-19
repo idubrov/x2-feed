@@ -1,12 +1,8 @@
 use stm32f103xx::{GPIOA, RCC};
 
-pub struct Led {}
+pub struct Led;
 
 impl Led {
-    pub const fn new() -> Led {
-        Led {}
-    }
-
     pub fn init(&self, gpioa: &GPIOA, rcc: &RCC) {
         rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
 

@@ -35,11 +35,11 @@ use rtfm::{app, Threshold, Resource};
 mod hw;
 mod font;
 
-static LCD: hwlcd::Lcd = hwlcd::Lcd::new();
-static LED: led::Led = led::Led::new();
-static ENC: encoder::Encoder = encoder::Encoder::new();
-static DRIVER: driver::DriverRef = driver::DriverRef::new();
-static CONTROLS: controls::Controls = controls::Controls::new();
+static LCD: hwlcd::Lcd = hwlcd::Lcd;
+static LED: led::Led = led::Led;
+static ENC: encoder::Encoder = encoder::Encoder;
+static DRIVER: driver::DriverRef = driver::DriverRef;
+static CONTROLS: controls::Controls = controls::Controls;
 
 app! {
     device: stm32f103xx,

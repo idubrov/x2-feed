@@ -8,15 +8,9 @@ const fn ns2ticks(ns: u32) -> u16 {
 const STEP_PULSE_WIDTH_TICKS: u16 = ns2ticks(75);
 
 
-pub struct DriverRef {
-}
+pub struct DriverRef;
 
 impl DriverRef {
-    pub const fn new() -> DriverRef {
-        DriverRef {
-        }
-    }
-
     pub fn materialize<'a>(&self, tim1: &'a TIM1, gpioa: &'a GPIOA) -> Driver<'a> {
         Driver {
             tim1: tim1,

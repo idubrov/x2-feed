@@ -9,13 +9,9 @@ pub struct State {
     pub fast: bool,
 }
 
-pub struct Controls {}
+pub struct Controls;
 
 impl Controls {
-    pub const fn new() -> Controls {
-        Controls {}
-    }
-
     pub fn init(&self, gpioa: &GPIOA, rcc: &RCC) {
         rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
 

@@ -1,12 +1,8 @@
 use stm32f103xx::{GPIOA, TIM3, RCC};
 
-pub struct Encoder {}
+pub struct Encoder;
 
 impl Encoder {
-    pub const fn new() -> Encoder {
-        Encoder {}
-    }
-
     pub fn init(&self, tim3: &TIM3, gpioa: &GPIOA, rcc: &RCC) {
         rcc.apb1enr.modify(|_, w| w.tim3en().enabled());
         rcc.apb2enr.modify(|_, w| w.iopaen().enabled());

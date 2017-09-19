@@ -3,13 +3,9 @@ extern crate lcd;
 use stm32f103xx::{GPIOB, SYST, RCC};
 
 /// Wrapper type to create HD44780 instances as needed
-pub struct Lcd {}
+pub struct Lcd;
 
 impl Lcd {
-    pub const fn new() -> Lcd {
-        Lcd {}
-    }
-
     pub fn init(&self, gpiob: &GPIOB, rcc: &RCC) {
         rcc.apb2enr.modify(|_, w| w.iopben().enabled());
 
