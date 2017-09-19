@@ -18,6 +18,7 @@ pub trait PulseGen {
     /// Indicate that no new delay is available, should stop once current step completes.
     fn set_last(&mut self);
 
+    /// Returns `true` if timer generating pulses is running, `false` otherwise.
     fn is_running(&self) -> bool;
 }
 

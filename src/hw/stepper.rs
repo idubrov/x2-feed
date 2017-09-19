@@ -1,6 +1,5 @@
 use stepgen;
 
-use hw::config::DRIVER_TICK_FREQUENCY;
 use hal::stepper::Driver;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -11,17 +10,11 @@ enum State {
     StopRequested,
     /// Stopping the motor
     Stopping,
-    /// Running in the negative direction (`direction` is `false`)
-    RunningNegative,
-    /// Running in the positive direction (`direction` is `true`)
-    RunningPositive,
+    /// Stepper motor is running
+    Running,
 }
 
 pub struct Stepper {
-    // If should reverse direction signal
-    // FIXME: remove...
-    reverse: bool,
-
     stepgen: stepgen::Stepgen,
     direction: bool,
 
@@ -38,10 +31,9 @@ fn round16_8(delay: u32) -> u16 {
 }
 
 impl Stepper {
-    pub const fn new() -> Stepper {
+    pub const fn new(freq: u32) -> Stepper {
         Stepper {
-            reverse: true,
-            stepgen: stepgen::Stepgen::new(DRIVER_TICK_FREQUENCY),
+            stepgen: stepgen::Stepgen::new(freq),
             direction: true,
             base_step: 0,
             position: 0,
@@ -83,6 +75,11 @@ impl Stepper {
             State::Stopping if !driver.is_running() => {
                 driver.enable(false);
                 self.state = State::Stopped;
+
+                // Update internal position counter. We do it at the end to reduce amount of work
+                // we do per step (direction could not be changed while running, so all steps go
+                // in one direction).
+                self.update_position();
                 return; // Do not preload the delay -- we are stopped now
             },
             State::Stopped =>
@@ -94,7 +91,7 @@ impl Stepper {
     }
 
     // Incorporate outstanding steps from the stepgen into current position
-    fn update_position(&mut self) -> i32 {
+    fn update_position(&mut self) {
         let step = self.stepgen.current_step();
         let offset = (step - self.base_step) as i32;
         self.base_step = step;
@@ -103,11 +100,10 @@ impl Stepper {
         } else {
             self.position -= offset;
         }
-        self.position
     }
 
     fn set_direction(&mut self, driver: &mut Driver, dir: bool) {
-        driver.direction(if self.reverse { dir } else { !dir });
+        driver.direction(dir);
         self.direction = dir;
     }
 
@@ -118,20 +114,19 @@ impl Stepper {
             return false;
         }
 
-        let pos = self.update_position();
         let delta;
-        if pos < target {
-            delta = (target - pos) as u32;
+        if self.position < target {
+            delta = (target - self.position) as u32;
             self.set_direction(driver, true);
-            self.state = State::RunningPositive;
-        } else if pos > target {
-            delta = (pos - target) as u32;
+        } else if self.position > target {
+            delta = (self.position - target) as u32;
             self.set_direction(driver, false);
-            self.state = State::RunningNegative;
         } else {
             // Nothing to do!
             return true;
         }
+
+        self.state = State::Running;
         self.stepgen.set_target_step(self.base_step + delta);
 
         // Enable driver outputs
@@ -148,10 +143,8 @@ impl Stepper {
 
 
     pub fn stop(&mut self) {
-        match self.state {
-            State::RunningNegative | State::RunningPositive =>
-                self.state = State::StopRequested,
-            _ => ()
+        if self.state == State::Running {
+            self.state = State::StopRequested
         }
     }
 

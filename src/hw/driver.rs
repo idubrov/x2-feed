@@ -14,8 +14,8 @@ pub struct SingletonDriver;
 impl SingletonDriver {
     pub fn materialize<'a>(&self, tim1: &'a TIM1, gpioa: &'a GPIOA) -> BoundDriver<'a> {
         BoundDriver {
-            tim1: tim1,
-            gpioa: gpioa,
+            tim1,
+            gpioa,
         }
     }
 }
@@ -31,7 +31,8 @@ impl<'a> DriverControl for BoundDriver<'a> {
     }
 
     fn direction(&mut self, dir: bool) {
-        DIR.set(self.gpioa, if dir { 1 } else { 0 });
+        // Note: reversed
+        DIR.set(self.gpioa, if dir { 0 } else { 1 });
     }
 }
 
@@ -62,17 +63,8 @@ impl<'a> PulseGen for BoundDriver<'a> {
     }
 
     fn is_running(&self) -> bool {
-        // Step generation is still running
-        if self.tim1.cr1.read().cen().bit_is_set() {
-            return true;
-        }
-
-        // Last update is pending, consider as non-stopped yet
-        // FIXME: should not check this...
-        /*if self.tim1.sr.read().uif().is_pending() {
-            return true;
-        }*/
-        false
+        // Check if timer is still running
+        self.tim1.cr1.read().cen().bit_is_set()
     }
 }
 

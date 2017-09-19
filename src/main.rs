@@ -29,6 +29,7 @@ extern crate cortex_m_rtfm as rtfm;
 
 use stm32f103xx::{SYST, GPIOA, GPIOB};
 use hw::*;
+use hw::config::DRIVER_TICK_FREQUENCY;
 use core::fmt::Write;
 use rtfm::{app, Threshold, Resource};
 
@@ -40,7 +41,7 @@ app! {
     device: stm32f103xx,
 
     resources: {
-        static STEPPER: stepper::Stepper = stepper::Stepper::new();
+        static STEPPER: stepper::Stepper = stepper::Stepper::new(DRIVER_TICK_FREQUENCY);
         static HALL: hall::Hall = hall::Hall::new();
     },
 
