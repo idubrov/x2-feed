@@ -15,7 +15,7 @@
 //! 1. Setting feed speed via rotary encoder (both "slow" and "fast").
 //! 1. Spindle tachometer via hall sensor.
 //! 1. Emergency stop mode: halts stepper motor driver when emergency stop is pressed.
-//! 1. LCD screen displays current spindle speed and feed speed.
+//! 1. Screen screen displays current spindle speed and feed speed.
 //!
 //! # PCB
 //! See PCB (Eagle CAD) in the [pcb/](pcb/) directory.
@@ -28,14 +28,13 @@ extern crate lcd;
 extern crate cortex_m_rtfm as rtfm;
 
 use stm32f103xx::{SYST, GPIOA, GPIOB};
-use hw::{delay, clock, hwlcd, led, encoder, driver, stepper, controls, hall, ESTOP};
+use hw::{delay, clock, Screen, Display, led, encoder, driver, stepper, controls, hall, ESTOP};
 use core::fmt::Write;
 use rtfm::{app, Threshold, Resource};
 
 mod hw;
 mod font;
 
-static LCD: hwlcd::Lcd = hwlcd::Lcd;
 static LED: led::Led = led::Led;
 static ENC: encoder::Encoder = encoder::Encoder;
 static DRIVER: driver::DriverRef = driver::DriverRef;
@@ -101,7 +100,7 @@ fn init(p: init::Peripherals, r: init::Resources) {
 
     // Initialize hardware
     LED.init(p.GPIOA, p.RCC);
-    LCD.init(p.GPIOB, p.RCC);
+    Screen.init(p.GPIOB, p.RCC);
     ENC.init(p.TIM3, p.GPIOA, p.RCC);
     ENC.set_current(p.TIM3, 0); // Start with 1 IPM
     ENC.set_limit(p.TIM3, MAX_IPM);
@@ -115,7 +114,7 @@ fn init(p: init::Peripherals, r: init::Resources) {
     r.STEPPER.set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap();
 }
 
-fn estop(syst: &SYST, lcd: &mut lcd::Display<hwlcd::LcdHw>) -> ! {
+fn estop(syst: &SYST, lcd: &mut Display) -> ! {
     ::delay::ms(syst, 1); // Wait till power is back to normal
 
     // Immediately disable driver outputs
@@ -174,7 +173,7 @@ struct State {
 }
 
 fn init_screen(r: &idle::Resources) {
-    let mut lcd = LCD.materialize(r.SYST, r.GPIOB);
+    let mut lcd = Screen.materialize(r.SYST, r.GPIOB);
     lcd.init(lcd::FunctionLine::Line2, lcd::FunctionDots::Dots5x8);
     lcd.display(lcd::DisplayMode::DisplayOn, lcd::DisplayCursor::CursorOff, lcd::DisplayBlink::BlinkOff);
     font::upload_characters(&mut lcd);
@@ -182,7 +181,7 @@ fn init_screen(r: &idle::Resources) {
 }
 
 fn update_screen(state: &State, r: &idle::Resources) {
-    let mut lcd = LCD.materialize(r.SYST, r.GPIOB);
+    let mut lcd = Screen.materialize(r.SYST, r.GPIOB);
     lcd.position(0, 0);
     let rrpm = (state.rpm + 128) >> 8;
     write!(&mut lcd, "{: >4} RPM", rrpm).unwrap();
@@ -220,7 +219,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
     loop {
         if ESTOP.get(r.GPIOB) == 0 {
             {
-                let mut lcd = LCD.materialize(r.SYST, r.GPIOB);
+                let mut lcd = Screen.materialize(r.SYST, r.GPIOB);
                 estop(r.SYST, &mut lcd);
             }
         }

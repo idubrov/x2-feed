@@ -1,15 +1,19 @@
 #![allow(dead_code)]
+extern crate lcd;
 
 pub mod gpio;
 pub mod clock;
 pub mod delay;
-pub mod hwlcd;
+mod screen;
 pub mod led;
 pub mod encoder;
 pub mod driver;
 pub mod stepper;
 pub mod controls;
 pub mod hall;
+
+pub use self::screen::Screen;
+pub type Display<'a> = lcd::Display<self::screen::ScreenHAL<'a>>;
 
 use stm32f103xx::{GPIOA, GPIOB};
 

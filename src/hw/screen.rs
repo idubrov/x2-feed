@@ -2,10 +2,9 @@ extern crate lcd;
 
 use stm32f103xx::{GPIOB, SYST, RCC};
 
-/// Wrapper type to create HD44780 instances as needed
-pub struct Lcd;
+pub struct Screen;
 
-impl Lcd {
+impl Screen {
     pub fn init(&self, gpiob: &GPIOB, rcc: &RCC) {
         rcc.apb2enr.modify(|_, w| w.iopben().enabled());
 
@@ -26,8 +25,8 @@ impl Lcd {
         ::hw::RW.set(gpiob, 0);
     }
 
-    pub fn materialize<'a>(&self, syst: &'a SYST, gpiob: &'a GPIOB) -> lcd::Display<LcdHw<'a>> {
-        lcd::Display::new(LcdHw {
+    pub fn materialize<'a>(&self, syst: &'a SYST, gpiob: &'a GPIOB) -> lcd::Display<ScreenHAL<'a>> {
+        lcd::Display::new(ScreenHAL {
             syst,
             gpiob,
         })
@@ -35,12 +34,12 @@ impl Lcd {
 }
 
 /// Binding of HD44780 instance to real hardware
-pub struct LcdHw<'a> {
+pub struct ScreenHAL<'a> {
     syst: &'a SYST,
     gpiob: &'a GPIOB,
 }
 
-impl<'a> lcd::Hardware for LcdHw<'a> {
+impl<'a> lcd::Hardware for ScreenHAL<'a> {
     fn rs(&self, bit: bool) {
         ::hw::RS.set(self.gpiob, if bit { 1 } else { 0 });
     }
@@ -54,7 +53,7 @@ impl<'a> lcd::Hardware for LcdHw<'a> {
     }
 }
 
-impl<'a> lcd::Delay for LcdHw<'a> {
+impl<'a> lcd::Delay for ScreenHAL<'a> {
     fn delay_us(&self, delay_usec: u32) {
         ::hw::delay::us(self.syst, delay_usec);
     }
