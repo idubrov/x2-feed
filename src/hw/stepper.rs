@@ -1,6 +1,6 @@
 use stepgen;
 
-use hal::stepper::Driver;
+use hal::StepperDriver;
 
 #[derive(Clone, Copy, PartialEq)]
 enum State {
@@ -58,14 +58,14 @@ impl Stepper {
     }
 
     /// Returns `false` no new delay was loaded
-    fn preload_delay(&mut self, driver: &mut Driver) {
+    fn preload_delay(&mut self, driver: &mut StepperDriver) {
         match self.stepgen.next() {
             Some(delay) => driver.preload_delay(round16_8(delay)),
             None => driver.set_last(),
         }
     }
 
-    pub fn step_completed(&mut self, driver: &mut Driver) {
+    pub fn step_completed(&mut self, driver: &mut StepperDriver) {
         match self.state {
             State::StopRequested => {
                 // Initiate stopping sequence -- set target step to 0
@@ -102,14 +102,14 @@ impl Stepper {
         }
     }
 
-    fn set_direction(&mut self, driver: &mut Driver, dir: bool) {
+    fn set_direction(&mut self, driver: &mut StepperDriver, dir: bool) {
         driver.direction(dir);
         self.direction = dir;
     }
 
     /// Move to given position. Note that no new move commands will be accepted while stepper is
     /// running. However, other target parameter, target speed, could be changed any time.
-    pub fn move_to(&mut self, driver: &mut Driver, target: i32) -> bool {
+    pub fn move_to(&mut self, driver: &mut StepperDriver, target: i32) -> bool {
         if !self.is_stopped() {
             return false;
         }

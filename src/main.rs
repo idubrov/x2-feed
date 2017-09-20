@@ -28,6 +28,7 @@ extern crate lcd;
 extern crate cortex_m_rtfm as rtfm;
 
 use stm32f103xx::{SYST, GPIOA, GPIOB};
+use hal::StepperDriver;
 use hw::*;
 use hw::config::DRIVER_TICK_FREQUENCY;
 use core::fmt::Write;
@@ -43,16 +44,17 @@ app! {
     resources: {
         static STEPPER: stepper::Stepper = stepper::Stepper::new(DRIVER_TICK_FREQUENCY);
         static HALL: hall::Hall = hall::Hall::new();
+        static DRIVER: driver::Driver = driver::Driver;
     },
 
     idle: {
-        resources: [TIM1, TIM3, SYST, GPIOA, GPIOB, HALL, STEPPER],
+        resources: [DRIVER, STEPPER, TIM3, SYST, GPIOA, GPIOB, HALL],
     },
 
     tasks: {
         TIM1_UP_TIM10: {
             path: step_completed,
-            resources: [STEPPER, TIM1, GPIOA]
+            resources: [DRIVER, STEPPER]
         },
 
         TIM2: {
@@ -91,11 +93,10 @@ fn passivate(gpioa: &GPIOA, gpiob: &GPIOB) {
 }
 
 fn init(p: init::Peripherals, r: init::Resources) {
-    let driver = SingletonDriver.materialize(p.TIM1, p.GPIOA);
-
     clock::setup(p.RCC, p.SYST, p.FLASH);
 
     // Initialize hardware
+    r.DRIVER.init(p.RCC, p.GPIOA);
     Led.init(p.GPIOA, p.RCC);
     Screen.init(p.GPIOB, p.RCC);
     Encoder.init(p.TIM3, p.GPIOA, p.RCC);
@@ -106,7 +107,7 @@ fn init(p: init::Peripherals, r: init::Resources) {
 
     passivate(p.GPIOA, p.GPIOB);
 
-    driver.init(p.RCC);
+
     r.STEPPER.set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap();
 }
 
@@ -127,18 +128,13 @@ fn estop(syst: &SYST, lcd: &mut Display) -> ! {
 
 fn stepper_command<T, CB>(t: &mut Threshold, r: &mut idle::Resources, cb: CB) -> T
     where
-        CB: for<'a> FnOnce(&mut stepper::Stepper, &mut driver::BoundDriver) -> T {
+        CB: for<'a> FnOnce(&mut stepper::Stepper, &mut StepperDriver) -> T {
 
     let stepper = &mut r.STEPPER;
-    let tim1 = &r.TIM1;
-    let gpioa = &r.GPIOA;
-
+    let driver = &mut r.DRIVER;
     stepper.claim_mut(t, |stepper, t| {
-        tim1.claim(t, |tim1, t| {
-            gpioa.claim(t, |gpioa, _t| {
-                let mut driver = SingletonDriver.materialize(tim1, gpioa);
-                cb(stepper, &mut driver)
-            })
+        driver.claim_mut(t, |driver, _t| {
+            cb(stepper, driver as &mut driver::Driver)
         })
     })
 }
@@ -220,7 +216,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
             }
         }
 
-        let input = r.GPIOA.claim(t, |gpioa, _t| Controls.get(gpioa));
+        let input = Controls.get(r.GPIOA);
         handle_ipm(&mut state, input, t, &mut r);
         handle_feed(&mut state, input, t, &mut r);
         handle_rpm(&mut state, t, &r);
@@ -301,12 +297,9 @@ fn handle_rpm(state: &mut State, t: &mut Threshold, r: &idle::Resources) {
 }
 
 fn step_completed(_t: &mut Threshold, r: TIM1_UP_TIM10::Resources) {
-    let mut driver = SingletonDriver.materialize(r.TIM1, r.GPIOA);
-    let tim1 = &r.TIM1;
-
-    if tim1.sr.read().uif().is_pending() {
-        tim1.sr.modify(|_, w| w.uif().clear());
-        r.STEPPER.step_completed(&mut driver);
+    if r.DRIVER.interrupt() {
+        let driver: &mut driver::Driver = r.DRIVER;
+        r.STEPPER.step_completed(driver)
     }
 }
 

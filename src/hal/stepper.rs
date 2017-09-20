@@ -1,12 +1,14 @@
-pub trait DriverControl {
+pub trait Driver {
+    // Control aspect of stepper motor driver (setting directions, enabling/disabling outputs).
+
     /// Enable/disable driver outputs.
     fn enable(&mut self, enable: bool);
 
     /// Set stepper driver direction.
     fn direction(&mut self, bit: bool);
-}
 
-pub trait PulseGen {
+    // Pulse generating aspect of stepper motor driver.
+
     /// Enable PWM generating stepper motor pulses.
     /// `first_delay` is the first delay to load in the timer. Pulse generation starts immediately.
     fn start(&mut self, first_delay: u16);
@@ -20,7 +22,8 @@ pub trait PulseGen {
 
     /// Returns `true` if timer generating pulses is running, `false` otherwise.
     fn is_running(&self) -> bool;
-}
 
-pub trait Driver: DriverControl+PulseGen {}
-impl<T> Driver for T where T: PulseGen+DriverControl {}
+    /// Check for pending interrupt and handle it (reset pending flag). Returns `true` if interrupt
+    /// was pending.
+    fn interrupt<'a>(&mut self) -> bool;
+}

@@ -18,4 +18,4 @@ pub use self::led::Led;
 pub use self::encoder::Encoder;
 pub use self::controls::Controls;
 pub use self::controls::State as ControlsState;
-pub use self::driver::SingletonDriver;
+pub use self::driver::Driver;

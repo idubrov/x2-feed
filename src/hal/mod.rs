@@ -1,2 +1,4 @@
 
-pub mod stepper;
+mod stepper;
+
+pub use self::stepper::Driver as StepperDriver;
