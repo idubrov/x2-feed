@@ -1,6 +1,8 @@
 use stm32f103xx::SYST;
 
-// FIXME: 1.8sec is about maximum
+// FIXME: don't clear...
+
+// FIXME: 1.8sec is about maximum (SYST is 24-bit timer)
 pub fn us(syst: &SYST, delay: u32) {
     let old_reload = syst.get_reload();
     // SysTick is 1/8 AHB (9Mhz)

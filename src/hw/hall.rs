@@ -74,6 +74,7 @@ impl Hall {
             .cen().enabled());
     }
 
+    /// Completely owned by `Hall`
     fn unsafe_timer(&self) -> &'static TIM2 {
         unsafe { &*TIM2.get() }
     }

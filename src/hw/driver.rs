@@ -75,12 +75,13 @@ impl Driver {
     }
 
     // Unsafe accessor for the port. Should only be used when both concurrent access is
-    // guaranteed by ownership of mutable Driver reference and access is safe in regard
-    // of modifying registers not owned by the Driver.
+    // guaranteed by ownership of mutable/non-mutable Driver reference and access is safe
+    // in regard of modifying registers not owned by the Driver.
     fn unsafe_port(&self) -> &'static GPIOA {
         unsafe { &*GPIOA.get() }
     }
 
+    /// Completely owned by `Driver`
     fn unsafe_timer(&self) -> &'static TIM1 {
         unsafe { &*TIM1.get() }
     }

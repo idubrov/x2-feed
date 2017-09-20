@@ -23,8 +23,15 @@ impl Controls {
         );
     }
 
-    pub fn get(&self, gpioa: &GPIOA) -> State {
-        let values = gpioa.idr.read().bits();
+    // Unsafe accessor for the port. Should only be used when both concurrent access is
+    // guaranteed by ownership of mutable/non-mutable Driver reference and access is safe
+    // in regard of modifying registers not owned by the Driver.
+    fn unsafe_port(&self) -> &'static GPIOA {
+        unsafe { &*GPIOA.get() }
+    }
+
+    pub fn get(&self) -> State {
+        let values = self.unsafe_port().idr.read().bits();
 
         let left = ((values >> LEFT.shift) as u16) & LEFT.mask;
         let right = ((values >> RIGHT.shift) as u16) & RIGHT.mask;

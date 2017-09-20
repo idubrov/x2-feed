@@ -7,10 +7,9 @@ pub mod delay;
 mod screen;
 mod led;
 mod encoder;
-pub mod driver;
-pub mod stepper;
+mod driver;
 mod controls;
-pub mod hall;
+mod hall;
 
 pub use self::screen::Screen;
 pub type Display<'a> = lcd::Display<self::screen::ScreenHAL<'a>>;
@@ -19,3 +18,4 @@ pub use self::encoder::Encoder;
 pub use self::controls::Controls;
 pub use self::controls::State as ControlsState;
 pub use self::driver::Driver;
+pub use self::hall::Hall;

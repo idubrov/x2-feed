@@ -29,27 +29,30 @@ extern crate cortex_m_rtfm as rtfm;
 
 use stm32f103xx::{SYST, GPIOA, GPIOB};
 use hal::{StepperDriver, RpmSensor, QuadEncoder};
-use hw::*;
 use hw::config::DRIVER_TICK_FREQUENCY;
 use core::fmt::Write;
 use rtfm::{app, Threshold, Resource};
+use hw::{clock, delay, Screen, Display, ControlsState};
 
 mod hal;
 mod hw;
 mod font;
+mod stepper;
 
 app! {
     device: stm32f103xx,
 
     resources: {
         static STEPPER: stepper::Stepper = stepper::Stepper::new(DRIVER_TICK_FREQUENCY);
-        static HALL: hall::Hall = hall::Hall::new();
-        static DRIVER: driver::Driver = driver::Driver;
+        static HALL: hw::Hall = hw::Hall::new();
+        static DRIVER: hw::Driver = hw::Driver;
         static ENCODER: hw::Encoder = hw::Encoder;
+        static LED: hw::Led = hw::Led;
+        static CONTROLS: hw::Controls = hw::Controls;
     },
 
     idle: {
-        resources: [DRIVER, STEPPER, ENCODER, SYST, GPIOA, GPIOB, HALL],
+        resources: [DRIVER, STEPPER, ENCODER, SYST, GPIOA, GPIOB, HALL, LED, CONTROLS],
     },
 
     tasks: {
@@ -98,14 +101,14 @@ fn init(p: init::Peripherals, r: init::Resources) {
 
     // Initialize hardware
     r.DRIVER.init(p.RCC, p.GPIOA);
-    Led.init(p.GPIOA, p.RCC);
+    r.LED.init(p.GPIOA, p.RCC);
     Screen.init(p.GPIOB, p.RCC);
 
     r.ENCODER.init(p.GPIOA, p.RCC);
     r.ENCODER.set_current(0); // Start with 1 IPM
     r.ENCODER.set_limit(MAX_IPM);
 
-    Controls.init(p.GPIOA, p.RCC);
+    r.CONTROLS.init(p.GPIOA, p.RCC);
     r.HALL.init(p.TIM2, p.GPIOA, p.RCC);
 
     passivate(p.GPIOA, p.GPIOB);
@@ -115,7 +118,7 @@ fn init(p: init::Peripherals, r: init::Resources) {
 }
 
 fn estop(syst: &SYST, lcd: &mut Display) -> ! {
-    ::delay::ms(syst, 1); // Wait till power is back to normal
+    delay::ms(syst, 1); // Wait till power is back to normal
 
     // Immediately disable driver outputs
     ::hw::config::ENABLE.set(unsafe { &(*stm32f103xx::GPIOA.get()) }, 0);
@@ -137,7 +140,7 @@ fn stepper_command<T, CB>(t: &mut Threshold, r: &mut idle::Resources, cb: CB) ->
     let driver = &mut r.DRIVER;
     stepper.claim_mut(t, |stepper, t| {
         driver.claim_mut(t, |driver, _t| {
-            cb(stepper, driver as &mut driver::Driver)
+            cb(stepper, driver as &mut hw::Driver)
         })
     })
 }
@@ -198,7 +201,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
 
     // Need to wait at least 40ms after Vcc rises to 2.7V
     // STM32 could start much earlier than that
-    ::delay::ms(r.SYST, 50);
+    delay::ms(r.SYST, 50);
 
     let mut state = State {
         run_state: RunState::Stopped,
@@ -219,7 +222,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
             }
         }
 
-        let input = Controls.get(r.GPIOA);
+        let input = r.CONTROLS.get();
         handle_ipm(&mut state, input, t, &mut r);
         handle_feed(&mut state, input, t, &mut r);
         handle_rpm(&mut state, t, &r);
@@ -301,7 +304,7 @@ fn handle_rpm(state: &mut State, t: &mut Threshold, r: &idle::Resources) {
 
 fn step_completed(_t: &mut Threshold, r: TIM1_UP_TIM10::Resources) {
     if r.DRIVER.interrupt() {
-        let driver: &mut driver::Driver = r.DRIVER;
+        let driver: &mut hw::Driver = r.DRIVER;
         r.STEPPER.step_completed(driver)
     }
 }
