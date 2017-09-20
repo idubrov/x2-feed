@@ -58,11 +58,13 @@ app! {
     tasks: {
         TIM1_UP_TIM10: {
             path: step_completed,
+            priority: 16,
             resources: [DRIVER, STEPPER]
         },
 
         TIM2: {
             path: hall_interrupt,
+            priority: 1,
             resources: [HALL]
         }
     },
