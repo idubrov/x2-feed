@@ -1,6 +1,7 @@
 use stm32f103xx::{TIM2, GPIOA, RCC};
 
 use hw::config::{FREQUENCY, HALL_TICK_FREQUENCY, HALL_MAX_RPM, HALL_MIN_RPM};
+use hal::RpmSensor;
 
 // Compute what could be the shortest period between two hall sensor triggers (fastest RPM).
 // Used to filter the noise and also to account for the case when timer overflowed just before
@@ -73,8 +74,17 @@ impl Hall {
             .cen().enabled());
     }
 
-    pub fn interrupt(&mut self, tim2: &TIM2) {
+    fn unsafe_timer(&self) -> &'static TIM2 {
+        unsafe { &*TIM2.get() }
+    }
+}
+
+impl RpmSensor for Hall {
+    fn interrupt(&mut self) -> bool {
+        let tim2 = self.unsafe_timer();
+
         if tim2.sr.read().cc1if().bit_is_set() {
+            // FIXME: check if we can get away with write...
             tim2.sr.modify(|_, w| w.cc1if().clear_bit());
 
             let lsb = tim2.ccr1.read().bits();
@@ -90,6 +100,7 @@ impl Hall {
             // allowed value (`MIN_PERIOD`). If it is lower, we assume that timer overflowed just
             // before the capture event (and hence capture event is that small).
             if lsb < MIN_PERIOD && tim2.sr.read().uif().is_pending() {
+                // FIXME: check if we can get away with write...
                 tim2.sr.modify(|_, w| w.uif().clear_bit());
                 // Capture happened just after the overflow: need to increment upper "msb"
                 self.msb += 1;
@@ -101,7 +112,9 @@ impl Hall {
                 self.captured = captured;
             }
             self.msb = 0;
+            true
         } else if tim2.sr.read().uif().is_pending() {
+            // FIXME: check if we can get away with write...
             tim2.sr.modify(|_, w| w.uif().clear());
             self.msb += 1;
 
@@ -109,11 +122,13 @@ impl Hall {
             if self.msb >= MAX_MSB {
                 self.captured = 0;
             }
+            true
+        } else {
+            false
         }
     }
 
-    /// Get latest captured RPM, in 24.8 format
-    pub fn rpm(&self) -> u32 {
+    fn rpm(&self) -> u32 {
         if self.captured != 0 { ((60 * HALL_TICK_FREQUENCY) << 8) / self.captured } else { 0 }
     }
 }

@@ -25,5 +25,5 @@ pub trait Driver {
 
     /// Check for pending interrupt and handle it (reset pending flag). Returns `true` if interrupt
     /// was pending.
-    fn interrupt<'a>(&mut self) -> bool;
+    fn interrupt(&mut self) -> bool;
 }

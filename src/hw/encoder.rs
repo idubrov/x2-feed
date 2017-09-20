@@ -1,9 +1,13 @@
 use stm32f103xx::{GPIOA, TIM3, RCC};
+use hal::QuadEncoder;
 
 pub struct Encoder;
 
 impl Encoder {
-    pub fn init(&self, tim3: &TIM3, gpioa: &GPIOA, rcc: &RCC) {
+    // Note that we require an explicit ownership of I/O port peripheral to guard against
+    // concurrent access when we modify shared register of the peripheral (CRL)
+    pub fn init(&self, gpioa: &GPIOA, rcc: &RCC) {
+        let tim3 = self.unsafe_timer();
         rcc.apb1enr.modify(|_, w| w.tim3en().enabled());
         rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
         rcc.apb2enr.modify(|_, w| w.afioen().enabled());
@@ -31,15 +35,22 @@ impl Encoder {
         tim3.cr1.write(|w| w.cen().enabled());
     }
 
-    pub fn set_limit(&self, tim3: &TIM3, limit : u16) {
-        tim3.arr.write(|w| w.arr().bits((limit * 2) - 1));
+    fn unsafe_timer(&self) -> &'static TIM3 {
+        unsafe { &*TIM3.get() }
+    }
+}
+
+impl QuadEncoder for Encoder {
+
+    fn set_limit(&mut self, limit : u16) {
+        self.unsafe_timer().arr.write(|w| w.arr().bits((limit * 2) - 1));
     }
 
-    pub fn current(&self, tim3: &TIM3) -> u16 {
-        tim3.cnt.read().cnt().bits() / 2
+    fn current(&self) -> u16 {
+        self.unsafe_timer().cnt.read().cnt().bits() / 2
     }
 
-    pub fn set_current(&self, tim3: &TIM3, pos: u16) {
-        tim3.cnt.write(|w| w.cnt().bits(pos * 2));
+    fn set_current(&mut self, pos: u16) {
+        self.unsafe_timer().cnt.write(|w| w.cnt().bits(pos * 2));
     }
 }

@@ -28,7 +28,7 @@ extern crate lcd;
 extern crate cortex_m_rtfm as rtfm;
 
 use stm32f103xx::{SYST, GPIOA, GPIOB};
-use hal::StepperDriver;
+use hal::{StepperDriver, RpmSensor, QuadEncoder};
 use hw::*;
 use hw::config::DRIVER_TICK_FREQUENCY;
 use core::fmt::Write;
@@ -45,10 +45,11 @@ app! {
         static STEPPER: stepper::Stepper = stepper::Stepper::new(DRIVER_TICK_FREQUENCY);
         static HALL: hall::Hall = hall::Hall::new();
         static DRIVER: driver::Driver = driver::Driver;
+        static ENCODER: hw::Encoder = hw::Encoder;
     },
 
     idle: {
-        resources: [DRIVER, STEPPER, TIM3, SYST, GPIOA, GPIOB, HALL],
+        resources: [DRIVER, STEPPER, ENCODER, SYST, GPIOA, GPIOB, HALL],
     },
 
     tasks: {
@@ -59,7 +60,7 @@ app! {
 
         TIM2: {
             path: hall_interrupt,
-            resources: [HALL, TIM2]
+            resources: [HALL]
         }
     },
 }
@@ -99,9 +100,11 @@ fn init(p: init::Peripherals, r: init::Resources) {
     r.DRIVER.init(p.RCC, p.GPIOA);
     Led.init(p.GPIOA, p.RCC);
     Screen.init(p.GPIOB, p.RCC);
-    Encoder.init(p.TIM3, p.GPIOA, p.RCC);
-    Encoder.set_current(p.TIM3, 0); // Start with 1 IPM
-    Encoder.set_limit(p.TIM3, MAX_IPM);
+
+    r.ENCODER.init(p.GPIOA, p.RCC);
+    r.ENCODER.set_current(0); // Start with 1 IPM
+    r.ENCODER.set_limit(MAX_IPM);
+
     Controls.init(p.GPIOA, p.RCC);
     r.HALL.init(p.TIM2, p.GPIOA, p.RCC);
 
@@ -207,7 +210,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
         rpm: 0,
         ipm: 0,
     };
-    Encoder.set_current(r.TIM3, state.slow_ipm - 1);
+    r.ENCODER.set_current(state.slow_ipm - 1);
     loop {
         if ::hw::config::ESTOP.get(r.GPIOB) == 0 {
             {
@@ -226,13 +229,13 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
 }
 
 fn handle_ipm(state: &mut State, input: ControlsState, t: &mut Threshold, r: &mut idle::Resources) {
-    let mut ipm = Encoder.current(r.TIM3) + 1; // Encoder is off by one (as it starts from 0)
+    let mut ipm = r.ENCODER.current() + 1; // Encoder is off by one (as it starts from 0)
     match (state.fast, input.fast) {
         (false, true) => {
             // Switch to fast IPM
             state.slow_ipm = ipm;
             ipm = state.fast_ipm;
-            Encoder.set_current(r.TIM3, ipm - 1);
+            r.ENCODER.set_current(ipm - 1);
             state.fast = true;
         }
 
@@ -240,7 +243,7 @@ fn handle_ipm(state: &mut State, input: ControlsState, t: &mut Threshold, r: &mu
             // Switch to slow IPM
             state.fast_ipm = ipm;
             ipm = state.slow_ipm;
-            Encoder.set_current(r.TIM3, ipm - 1);
+            r.ENCODER.set_current(ipm - 1);
             state.fast = false;
         }
 
@@ -304,5 +307,5 @@ fn step_completed(_t: &mut Threshold, r: TIM1_UP_TIM10::Resources) {
 }
 
 fn hall_interrupt(_t: &mut Threshold, r: TIM2::Resources) {
-    r.HALL.interrupt(r.TIM2);
+    r.HALL.interrupt();
 }
