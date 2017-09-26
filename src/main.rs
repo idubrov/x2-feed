@@ -27,7 +27,7 @@ extern crate lcd;
 
 extern crate cortex_m_rtfm as rtfm;
 
-use stm32f103xx::{SYST, GPIOA, GPIOB};
+use stm32f103xx::{SYST, GPIOA, GPIOB, RCC, TIM4};
 use hal::{StepperDriver, RpmSensor, QuadEncoder};
 use hw::config::DRIVER_TICK_FREQUENCY;
 use core::fmt::Write;
@@ -52,7 +52,7 @@ app! {
     },
 
     idle: {
-        resources: [DRIVER, STEPPER, ENCODER, SYST, GPIOA, GPIOB, HALL, LED, CONTROLS],
+        resources: [DRIVER, STEPPER, ENCODER, SYST, GPIOA, GPIOB, HALL, LED, CONTROLS, TIM4, TIM2],
     },
 
     tasks: {
@@ -117,6 +117,22 @@ fn init(p: init::Peripherals, r: init::Resources) {
 
 
     r.STEPPER.set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap();
+
+
+    //
+    let rcc: &RCC = p.RCC;
+    let tim4: &TIM4 = p.TIM4;
+    let tim2 = p.TIM2;
+    rcc.apb1enr.modify(|_, w| w.tim4en().enabled());
+    tim4.cnt.write(|w| w.cnt().bits(65535u16));
+    //tim4.cr1.write(|w| w.cen().set_bit());
+    tim4.psc.write(|w| w.psc().bits(((7200) - 1) as u16));
+
+    tim2.cr2.modify(|_, w| unsafe { w.mms().bits(0b011) });
+    tim4.smcr.modify(|_, w| w.ts().itr1().sms().trigger());
+    //TIM2 CR2:MMS = 011: Compare Pulse
+    //TIM4 SMCR:TS = 001: TIM2
+    //TIM4 SMCR:SMS = 110: Trigger mode
 }
 
 fn estop(syst: &SYST, lcd: &mut Display) -> ! {
@@ -196,6 +212,9 @@ fn update_screen(state: &State, r: &idle::Resources) {
         _ => ' '
     };
     write!(&mut lcd, "{}{: >3} IPM", c, u32::from(state.ipm + 1)).unwrap();
+
+    lcd.position(9, 0);
+    write!(&mut lcd, "{: >5}", r.TIM4.cnt.read().bits()).unwrap();
 }
 
 fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
