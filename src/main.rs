@@ -112,7 +112,7 @@ fn init(p: init::Peripherals, r: init::Resources) {
     r.ENCODER.set_current(0); // Start with 1 IPM
     r.ENCODER.set_limit(MAX_IPM);
 
-    r.CONTROLS.init(p.GPIOA, p.RCC);
+    r.CONTROLS.init(p.RCC);
     r.HALL.init(p.TIM2, p.GPIOA, p.RCC);
 
     // Disable unused inputs
