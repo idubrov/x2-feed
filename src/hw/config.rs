@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub const FREQUENCY: u32 = 72_000_000;
 
 use stm32f103xx::{GPIOA, GPIOB};
