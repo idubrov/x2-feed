@@ -22,7 +22,8 @@ version = "0.7.5"
 features = ["rt"]
 
 [dependencies.lcd]
-version = "0.2.0"
+version = "0.3.0-alpha.0"
+path = "../lcd"
 
 [dependencies.stm32-extras]
 version = "0.1.0"

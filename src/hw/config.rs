@@ -5,15 +5,12 @@ use stm32f103xx::{GPIOA, GPIOB};
 
 use hw::gpio;
 use hal::{Controls, Led};
+use hal;
 
-pub mod lcd {
-    pub type PORT = super::GPIOB;
-    pub fn port() -> &'static PORT { unsafe { &*super::GPIOB.get() } }
-
-    pub const RS: usize = 1; // PB1 is RS
-    pub const RW: usize = 10; // PB10 is RW
-    pub const E: usize = 11; // PB11 is E
-    pub const DATA: usize = 12; // PB12-PB15 are DB4-DB7
+pub type Screen = hal::Screen<GPIOB>;
+pub const fn screen() -> Screen {
+    // PB1 is RS, PB10 is RW, PB11 is E, PB12-PB15 are DB4-DB7
+    Screen::new(GPIOB, 1, 10, 11, 12)
 }
 
 // Encoder

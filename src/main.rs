@@ -30,12 +30,13 @@ extern crate bare_metal;
 
 use stm32f103xx::{GPIOA, GPIOB};
 use hal::{StepperDriver, RpmSensor, QuadEncoder, Controls, ControlsState, Led};
+use hw::config::{Screen, screen};
 use hw::config::DRIVER_TICK_FREQUENCY;
 use core::fmt::Write;
 use rtfm::{app, Threshold, Resource};
 use hw::{clock, delay};
 
-type Display = lcd::Display<hw::Screen>;
+type Display<'a> = lcd::Display<'a, Screen>;
 
 mod hal;
 mod hw;
@@ -52,7 +53,7 @@ app! {
         static ENCODER: hw::Encoder = hw::Encoder;
         static LED: Led<GPIOA> = hw::config::led();
         static CONTROLS: Controls<GPIOA> = hw::config::controls();
-        static SCREEN: hw::Screen = hw::Screen;
+        static SCREEN: Screen = screen();
     },
 
     idle: {
@@ -107,11 +108,12 @@ fn init(p: init::Peripherals, r: init::Resources) {
 
     // Enable peripherals
     p.RCC.apb2enr.modify(|_, w| w.iopaen().enabled());
+    p.RCC.apb2enr.modify(|_, w| w.iopben().enabled());
 
     // Initialize peripherals
     r.DRIVER.init(p.RCC, p.GPIOA);
     r.LED.init();
-    r.SCREEN.init(p.RCC);
+    r.SCREEN.init();
     r.ENCODER.init(p.GPIOA, p.RCC);
     r.ENCODER.set_current(0); // Start with 1 IPM
     r.ENCODER.set_limit(MAX_IPM);
@@ -130,11 +132,11 @@ fn init(p: init::Peripherals, r: init::Resources) {
     // STM32 could start much earlier than that
     delay::ms(50);
 
-    init_screen();
+    init_screen(&r);
 }
 
-fn init_screen() {
-    let mut lcd = Display::new(hw::Screen);
+fn init_screen(r: &init::Resources) {
+    let mut lcd = Display::new(r.SCREEN);
 
     lcd.init(lcd::FunctionLine::Line2, lcd::FunctionDots::Dots5x8);
     lcd.display(lcd::DisplayMode::DisplayOn, lcd::DisplayCursor::CursorOff, lcd::DisplayBlink::BlinkOff);
@@ -142,13 +144,13 @@ fn init_screen() {
     lcd.entry_mode(lcd::EntryModeDirection::EntryRight, lcd::EntryModeShift::NoShift);
 }
 
-fn estop() -> ! {
+fn estop(screen: &Screen) -> ! {
     delay::ms(1); // Wait till power is back to normal
 
     // Immediately disable driver outputs
     ::hw::config::ENABLE.set(unsafe { &(*stm32f103xx::GPIOA.get()) }, 0);
 
-    let mut lcd = Display::new(hw::Screen);
+    let mut lcd = Display::new(screen);
     lcd.position(0, 0);
     write!(lcd, "*E-STOP*").unwrap();
     lcd.position(0, 1);
@@ -196,8 +198,8 @@ struct State {
     rpm: u32,
 }
 
-fn update_screen(state: &State) {
-    let mut lcd = Display::new(hw::Screen);
+fn update_screen(state: &State, screen: &Screen) {
+    let mut lcd = Display::new(screen);
 
     lcd.position(0, 0);
     let rrpm = (state.rpm + 128) >> 8;
@@ -230,7 +232,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
     loop {
         if ::hw::config::ESTOP.get(r.GPIOB) == 0 {
             {
-                estop();
+                estop(r.SCREEN);
             }
         }
 
@@ -239,7 +241,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
         handle_feed(&mut state, input, t, &mut r);
         handle_rpm(&mut state, t, &r);
 
-        update_screen(&state);
+        update_screen(&state, r.SCREEN);
     }
 }
 
