@@ -12,7 +12,7 @@ pub struct Screen<Port: 'static> {
     data: usize
 }
 
-impl <Port: Deref<Target = gpioa::RegisterBlock>> Screen<Port> {
+impl <Port> Screen<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
     pub const fn new(port: Peripheral<Port>, rs: usize, rw: usize, e: usize, data: usize) -> Screen<Port> {
         Screen { port, rs, rw, e, data }
     }
@@ -56,8 +56,8 @@ impl <Port: Deref<Target = gpioa::RegisterBlock>> lcd::Hardware for Screen<Port>
     }
 }
 
-impl <Port: Deref<Target = gpioa::RegisterBlock>> lcd::Delay for Screen<Port> {
+impl <Port> lcd::Delay for Screen<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
     fn delay_us(&self, delay_usec: u32) {
-        ::hw::delay::us(delay_usec);
+        super::delay::us(delay_usec);
     }
 }

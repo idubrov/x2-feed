@@ -29,17 +29,17 @@ extern crate cortex_m_rtfm as rtfm;
 extern crate bare_metal;
 
 use stm32f103xx::{GPIOA, GPIOB};
-use hal::{StepperDriver, RpmSensor, QuadEncoder, Controls, ControlsState, Led};
-use hw::config::{Screen, screen};
-use hw::config::DRIVER_TICK_FREQUENCY;
+use hal::*;
+use config::*;
 use core::fmt::Write;
 use rtfm::{app, Threshold, Resource};
-use hw::{clock, delay};
+use hal::{clock, delay};
+use stm32_extras::GPIOExtras;
 
-type Display<'a> = lcd::Display<'a, Screen>;
+type Display<'a> = lcd::Display<'a, ScreenResource>;
 
 mod hal;
-mod hw;
+mod config;
 mod font;
 mod stepper;
 
@@ -48,12 +48,12 @@ app! {
 
     resources: {
         static STEPPER: stepper::Stepper = stepper::Stepper::new(DRIVER_TICK_FREQUENCY);
-        static HALL: hw::Hall = hw::Hall::new();
-        static DRIVER: hw::Driver = hw::Driver;
-        static ENCODER: hw::Encoder = hw::Encoder;
-        static LED: Led<GPIOA> = hw::config::led();
-        static CONTROLS: Controls<GPIOA> = hw::config::controls();
-        static SCREEN: Screen = screen();
+        static HALL: RpmSensorResource = config::hall();
+        static DRIVER: StepperDriverResource = config::driver();
+        static ENCODER: QuadEncoderResource = config::encoder();
+        static LED: LedResource = config::led();
+        static CONTROLS: ControlsResource = config::controls();
+        static SCREEN: ScreenResource = config::screen();
     },
 
     idle: {
@@ -107,19 +107,23 @@ fn init(p: init::Peripherals, r: init::Resources) {
     clock::setup(p.RCC, p.SYST, p.FLASH);
 
     // Enable peripherals
+    p.RCC.apb1enr.modify(|_, w| w.tim2en().enabled());
+    p.RCC.apb1enr.modify(|_, w| w.tim3en().enabled());
+    p.RCC.apb2enr.modify(|_, w| w.tim1en().enabled());
     p.RCC.apb2enr.modify(|_, w| w.iopaen().enabled());
     p.RCC.apb2enr.modify(|_, w| w.iopben().enabled());
+    p.RCC.apb2enr.modify(|_, w| w.afioen().enabled());
 
     // Initialize peripherals
-    r.DRIVER.init(p.RCC, p.GPIOA);
+    r.DRIVER.init();
     r.LED.init();
     r.SCREEN.init();
-    r.ENCODER.init(p.GPIOA, p.RCC);
+    r.ENCODER.init();
     r.ENCODER.set_current(0); // Start with 1 IPM
     r.ENCODER.set_limit(MAX_IPM);
 
     r.CONTROLS.init();
-    r.HALL.init(p.TIM2, p.RCC);
+    r.HALL.init(p.TIM2);
 
     // Disable unused inputs
     passivate(p.GPIOA, p.GPIOB);
@@ -144,11 +148,12 @@ fn init_screen(r: &init::Resources) {
     lcd.entry_mode(lcd::EntryModeDirection::EntryRight, lcd::EntryModeShift::NoShift);
 }
 
-fn estop(screen: &Screen) -> ! {
+fn estop(screen: &ScreenResource) -> ! {
     delay::ms(1); // Wait till power is back to normal
 
     // Immediately disable driver outputs
-    ::hw::config::ENABLE.set(unsafe { &(*stm32f103xx::GPIOA.get()) }, 0);
+    let gpioa = unsafe { &(*stm32f103xx::GPIOA.get()) };
+    gpioa.write_pin(config::DRIVER_ENABLE_PIN, false);
 
     let mut lcd = Display::new(screen);
     lcd.position(0, 0);
@@ -168,7 +173,7 @@ fn stepper_command<T, CB>(t: &mut Threshold, r: &mut idle::Resources, cb: CB) ->
     let driver = &mut r.DRIVER;
     stepper.claim_mut(t, |stepper, t| {
         driver.claim_mut(t, |driver, _t| {
-            cb(stepper, driver as &mut hw::Driver)
+            cb(stepper, driver as &mut StepperDriverResource)
         })
     })
 }
@@ -198,7 +203,7 @@ struct State {
     rpm: u32,
 }
 
-fn update_screen(state: &State, screen: &Screen) {
+fn update_screen(state: &State, screen: &ScreenResource) {
     let mut lcd = Display::new(screen);
 
     lcd.position(0, 0);
@@ -230,7 +235,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
     };
     r.ENCODER.set_current(state.slow_ipm - 1);
     loop {
-        if ::hw::config::ESTOP.get(r.GPIOB) == 0 {
+        if !r.GPIOB.read_pin(config::ESTOP_PIN) {
             {
                 estop(r.SCREEN);
             }
@@ -318,7 +323,7 @@ fn handle_rpm(state: &mut State, t: &mut Threshold, r: &idle::Resources) {
 
 fn step_completed(_t: &mut Threshold, r: TIM1_UP_TIM10::Resources) {
     if r.DRIVER.interrupt() {
-        let driver: &mut hw::Driver = r.DRIVER;
+        let driver: &mut StepperDriverResource = r.DRIVER;
         r.STEPPER.step_completed(driver)
     }
 }

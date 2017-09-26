@@ -8,8 +8,9 @@ pub struct Led<Port: 'static> {
     port: Peripheral<Port>,
     pin: usize
 }
+unsafe impl <Port> Send for Led<Port> { }
 
-impl <Port: Deref<Target = gpioa::RegisterBlock>> Led<Port> {
+impl <Port> Led<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
     pub const fn new(port: Peripheral<Port>, pin: usize) -> Led<Port> {
         Led { port, pin }
     }

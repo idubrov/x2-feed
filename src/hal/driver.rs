@@ -1,6 +1,40 @@
-use stm32f103xx::{GPIOA, TIM1, RCC};
-use hw::config::{DRIVER_TICK_FREQUENCY, FREQUENCY, ENABLE, RESET, STEP, DIR};
-use hal::StepperDriver;
+use bare_metal::Peripheral;
+use stm32f103xx::gpioa;
+use core::ops::Deref;
+use stm32_extras::GPIOExtras;
+use stm32f103xx::TIM1;
+
+pub const DRIVER_TICK_FREQUENCY: u32 = 1_000_000; // 1us timer resolution
+
+pub trait StepperDriver {
+    // Control aspect of stepper motor driver (setting directions, enabling/disabling outputs).
+
+    /// Enable/disable driver outputs.
+    fn enable(&mut self, enable: bool);
+
+    /// Set stepper driver direction.
+    fn direction(&mut self, bit: bool);
+
+    // Pulse generating aspect of stepper motor driver.
+
+    /// Enable PWM generating stepper motor pulses.
+    /// `first_delay` is the first delay to load in the timer. Pulse generation starts immediately.
+    fn start(&mut self, first_delay: u16);
+
+    /// Preload delay for the next step into the pulse generator. This delay will be used once
+    /// current step completes.
+    fn preload_delay(&mut self, delay: u16);
+
+    /// Indicate that no new delay is available, should stop once current step completes.
+    fn set_last(&mut self);
+
+    /// Returns `true` if timer generating pulses is running, `false` otherwise.
+    fn is_running(&self) -> bool;
+
+    /// Check for pending interrupt and handle it (reset pending flag). Returns `true` if interrupt
+    /// was pending.
+    fn interrupt(&mut self) -> bool;
+}
 
 const fn ns2ticks(ns: u32) -> u16 {
     const NANOS_IN_SECOND: u32 = 1_000_000_000 / DRIVER_TICK_FREQUENCY;
@@ -9,31 +43,40 @@ const fn ns2ticks(ns: u32) -> u16 {
 
 const STEP_PULSE_WIDTH_TICKS: u16 = ns2ticks(75);
 
-pub struct Driver;
+pub struct StepperDriverImpl<Port: 'static> {
+    port: Peripheral<Port>,
+    step: usize,
+    dir: usize,
+    enable: usize,
+    reset: usize
+}
+unsafe impl <Port> Send for StepperDriverImpl<Port> { }
 
-impl Driver {
+impl <Port> StepperDriverImpl<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
+    pub const fn new(port: Peripheral<Port>, step: usize, dir: usize, enable: usize, reset: usize) -> StepperDriverImpl<Port> {
+        StepperDriverImpl { port, step, dir, enable, reset }
+    }
+
     // Note that we require an explicit ownership of I/O port peripheral to guard against
     // concurrent access when we modify shared register of the peripheral (CRH)
-    pub fn init(&mut self, rcc: &RCC, gpioa: &GPIOA) {
+    pub fn init(&mut self) {
         let tim1 = self.unsafe_timer(); // Timer is completely owned by `Driver`
+        let port = self.port();
 
-        rcc.apb2enr.modify(|_, w| w.tim1en().enabled());
-        rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
-        rcc.apb2enr.modify(|_, w| w.afioen().enabled());
+        port.write_pin(self.step, true);
+        port.write_pin(self.dir, true);
+        port.write_pin(self.enable, false);
+        port.write_pin(self.reset, false); // Start in reset mode
 
-        STEP.set(gpioa, 1);
-        DIR.set(gpioa, 1);
-        ENABLE.set(gpioa, 0);
-        RESET.set(gpioa, 0); // Start in reset mode
-
-        gpioa.crh.modify(|_, w| w
+        // FIXME: use safe API!
+        port.crh.modify(|_, w| w
             .mode8().output50().cnf8().alt_open()
             .mode9().output50().cnf9().open()
             .mode10().output50().cnf10().open()
             .mode11().output50().cnf11().open());
 
         // Prescaler
-        tim1.psc.write(|w| w.psc().bits(((FREQUENCY / DRIVER_TICK_FREQUENCY) - 1) as u16));
+        tim1.psc.write(|w| w.psc().bits(((super::clock::FREQUENCY / DRIVER_TICK_FREQUENCY) - 1) as u16));
 
         // Initialize timer
         tim1.cr1.write(|w| w
@@ -71,34 +114,29 @@ impl Driver {
         tim1.dier.write(|w| w.uie().set_bit());
 
         // Enable the driver
-        RESET.set(gpioa, 1);
-    }
-
-    // Unsafe accessor for the port. Should only be used when both concurrent access is
-    // guaranteed by ownership of mutable/non-mutable Driver reference and access is safe
-    // in regard of modifying registers not owned by the Driver.
-    fn unsafe_port(&self) -> &'static GPIOA {
-        unsafe { &*GPIOA.get() }
+        port.write_pin(self.reset, true);
     }
 
     /// Completely owned by `Driver`
     fn unsafe_timer(&self) -> &'static TIM1 {
         unsafe { &*TIM1.get() }
     }
+
+    fn port(&self) -> &Port {
+        unsafe { &*self.port.get() }
+    }
 }
 
 
-impl StepperDriver for Driver {
+impl <Port> StepperDriver for StepperDriverImpl<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
     // Controls
-
-
     fn enable(&mut self, enable: bool) {
-        ENABLE.set(self.unsafe_port(), if enable { 1 } else { 0 });
+        self.port().write_pin(self.enable, enable);
     }
 
     fn direction(&mut self, dir: bool) {
         // Note: reversed
-        DIR.set(self.unsafe_port(), if dir { 0 } else { 1 });
+        self.port().write_pin(self.dir, !dir);
     }
 
     // Pulse generation

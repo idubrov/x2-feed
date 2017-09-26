@@ -1,5 +1,7 @@
 use stm32f103xx::{RCC, FLASH, SYST};
 
+pub const FREQUENCY: u32 = 72_000_000;
+
 fn wait_condition<F>(syst: &SYST, f: F) -> bool
     where
         F: Fn() -> bool {
