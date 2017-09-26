@@ -4,6 +4,7 @@ pub const FREQUENCY: u32 = 72_000_000;
 use stm32f103xx::{GPIOA, GPIOB};
 
 use hw::gpio;
+use hal::{Controls, Led};
 
 pub mod lcd {
     pub type PORT = super::GPIOB;
@@ -13,13 +14,6 @@ pub mod lcd {
     pub const RW: usize = 10; // PB10 is RW
     pub const E: usize = 11; // PB11 is E
     pub const DATA: usize = 12; // PB12-PB15 are DB4-DB7
-}
-
-pub mod led {
-    pub type PORT = super::GPIOA;
-    pub fn port() -> &'static PORT { unsafe { &*super::GPIOA.get() } }
-
-    pub const PIN: usize = 4; // PA4 is LED
 }
 
 // Encoder
@@ -40,18 +34,21 @@ pub const DRIVER_TICK_FREQUENCY: u32 = 1_000_000; // 1us timer resolution
 
 pub const STEP_PULSE_WIDTH_NS: u16 = 75;
 
-pub mod controls {
+pub const fn led() -> Led<GPIOA> {
+    Led::new(GPIOA, 4) // PA4 is LED
+}
+
+pub const fn controls() -> Controls<GPIOA> {
+    Controls::new(GPIOA, 1, 2, 3)
+}
+
+pub mod hall {
     pub type PORT = super::GPIOA;
     pub fn port() -> &'static PORT { unsafe { &*super::GPIOA.get() } }
 
-    pub const LEFT: usize = 1;
-    pub const RIGHT: usize = 2;
-    pub const FAST: usize = 3;
+    pub const HALL_TICK_FREQUENCY: u32 = 100_000; // 0.01 ms
+    pub const HALL_MAX_RPM: u32 = 6000;
+    pub const HALL_MIN_RPM: u32 = 50;
+
+    pub const PIN: usize = 0;
 }
-
-// Hall
-pub const HALL_TICK_FREQUENCY: u32 = 100_000; // 0.01 ms
-pub const HALL_MAX_RPM: u32 = 6000;
-pub const HALL_MIN_RPM: u32 = 50;
-
-pub const HALL: gpio::PinRange<GPIOA> = gpio::PinRange::new(0, 1);

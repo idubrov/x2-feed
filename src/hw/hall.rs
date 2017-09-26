@@ -1,6 +1,8 @@
-use stm32f103xx::{TIM2, GPIOA, RCC};
+use stm32f103xx::{TIM2, RCC};
+use stm32_extras::GPIOExtras;
 
-use hw::config::{FREQUENCY, HALL_TICK_FREQUENCY, HALL_MAX_RPM, HALL_MIN_RPM};
+use hw::config::FREQUENCY;
+use hw::config::hall::{port, PIN, HALL_TICK_FREQUENCY, HALL_MAX_RPM, HALL_MIN_RPM};
 use hal::RpmSensor;
 
 // Compute what could be the shortest period between two hall sensor triggers (fastest RPM).
@@ -25,15 +27,14 @@ impl Hall {
         }
     }
 
-    pub fn init(&mut self, tim2: &TIM2, gpioa: &GPIOA, rcc: &RCC) {
+    pub fn init(&mut self, tim2: &TIM2, rcc: &RCC) {
         rcc.apb2enr.modify(|_, w| w.iopaen().enabled());
         rcc.apb1enr.modify(|_, w| w.tim2en().enabled());
 
-        gpioa.crl.modify(|_, w| w
-            // Input with pull-up/pull-down
-            .mode0().input().cnf0().bits(0b10)
-        );
-        gpioa.odr.modify(|_, w| w.odr0().set_bit());
+        let port = port();
+
+        port.pin_config(PIN).input().pull_up_down();
+        port.write_pin(PIN, true); // pull-up
 
         tim2.psc.write(|w| w.psc().bits(((FREQUENCY / HALL_TICK_FREQUENCY) - 1) as u16));
         tim2.arr.write(|w| w.arr().bits(0xffffu16));

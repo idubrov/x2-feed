@@ -26,13 +26,14 @@ extern crate stepgen;
 extern crate lcd;
 extern crate stm32_extras;
 extern crate cortex_m_rtfm as rtfm;
+extern crate bare_metal;
 
 use stm32f103xx::{GPIOA, GPIOB};
-use hal::{StepperDriver, RpmSensor, QuadEncoder};
+use hal::{StepperDriver, RpmSensor, QuadEncoder, Controls, ControlsState, Led};
 use hw::config::DRIVER_TICK_FREQUENCY;
 use core::fmt::Write;
 use rtfm::{app, Threshold, Resource};
-use hw::{clock, delay, ControlsState};
+use hw::{clock, delay};
 
 type Display = lcd::Display<hw::Screen>;
 
@@ -49,8 +50,8 @@ app! {
         static HALL: hw::Hall = hw::Hall::new();
         static DRIVER: hw::Driver = hw::Driver;
         static ENCODER: hw::Encoder = hw::Encoder;
-        static LED: hw::Led = hw::Led;
-        static CONTROLS: hw::Controls = hw::Controls;
+        static LED: Led<GPIOA> = hw::config::led();
+        static CONTROLS: Controls<GPIOA> = hw::config::controls();
         static SCREEN: hw::Screen = hw::Screen;
     },
 
@@ -104,16 +105,19 @@ fn passivate(gpioa: &GPIOA, gpiob: &GPIOB) {
 fn init(p: init::Peripherals, r: init::Resources) {
     clock::setup(p.RCC, p.SYST, p.FLASH);
 
+    // Enable peripherals
+    p.RCC.apb2enr.modify(|_, w| w.iopaen().enabled());
+
     // Initialize peripherals
     r.DRIVER.init(p.RCC, p.GPIOA);
-    r.LED.init(p.RCC);
+    r.LED.init();
     r.SCREEN.init(p.RCC);
     r.ENCODER.init(p.GPIOA, p.RCC);
     r.ENCODER.set_current(0); // Start with 1 IPM
     r.ENCODER.set_limit(MAX_IPM);
 
-    r.CONTROLS.init(p.RCC);
-    r.HALL.init(p.TIM2, p.GPIOA, p.RCC);
+    r.CONTROLS.init();
+    r.HALL.init(p.TIM2, p.RCC);
 
     // Disable unused inputs
     passivate(p.GPIOA, p.GPIOB);
@@ -230,7 +234,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
             }
         }
 
-        let input = r.CONTROLS.get();
+        let input = r.CONTROLS.state();
         handle_ipm(&mut state, input, t, &mut r);
         handle_feed(&mut state, input, t, &mut r);
         handle_rpm(&mut state, t, &r);
