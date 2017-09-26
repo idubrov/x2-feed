@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 pub const FREQUENCY: u32 = 72_000_000;
 
 use stm32f103xx::{GPIOA, GPIOB};
@@ -7,14 +6,20 @@ use hw::gpio;
 
 pub mod lcd {
     pub type PORT = super::GPIOB;
+    pub fn port() -> &'static PORT { unsafe { &*super::GPIOB.get() } }
+
     pub const RS: usize = 1; // PB1 is RS
     pub const RW: usize = 10; // PB10 is RW
     pub const E: usize = 11; // PB11 is E
     pub const DATA: usize = 12; // PB12-PB15 are DB4-DB7
 }
 
-// LED
-pub const LED: gpio::PinRange<GPIOA> = gpio::PinRange::new(4, 1);
+pub mod led {
+    pub type PORT = super::GPIOA;
+    pub fn port() -> &'static PORT { unsafe { &*super::GPIOA.get() } }
+
+    pub const PIN: usize = 4; // PA4 is LED
+}
 
 // Encoder
 pub const BTN: gpio::PinRange<GPIOA> = gpio::PinRange::new(5, 1);
@@ -36,6 +41,8 @@ pub const STEP_PULSE_WIDTH_NS: u16 = 75;
 
 pub mod controls {
     pub type PORT = super::GPIOA;
+    pub fn port() -> &'static PORT { unsafe { &*super::GPIOA.get() } }
+
     pub const LEFT: usize = 1;
     pub const RIGHT: usize = 2;
     pub const FAST: usize = 3;

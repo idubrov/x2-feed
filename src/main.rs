@@ -106,7 +106,7 @@ fn init(p: init::Peripherals, r: init::Resources) {
 
     // Initialize peripherals
     r.DRIVER.init(p.RCC, p.GPIOA);
-    r.LED.init(p.GPIOA, p.RCC);
+    r.LED.init(p.RCC);
     r.SCREEN.init(p.RCC);
     r.ENCODER.init(p.GPIOA, p.RCC);
     r.ENCODER.set_current(0); // Start with 1 IPM
