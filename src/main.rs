@@ -24,15 +24,17 @@ extern crate cortex_m;
 extern crate stm32f103xx;
 extern crate stepgen;
 extern crate lcd;
-
+extern crate stm32_extras;
 extern crate cortex_m_rtfm as rtfm;
 
-use stm32f103xx::{SYST, GPIOA, GPIOB};
+use stm32f103xx::{GPIOA, GPIOB};
 use hal::{StepperDriver, RpmSensor, QuadEncoder};
 use hw::config::DRIVER_TICK_FREQUENCY;
 use core::fmt::Write;
 use rtfm::{app, Threshold, Resource};
-use hw::{clock, delay, Screen, Display, ControlsState};
+use hw::{clock, delay, ControlsState};
+
+type Display = lcd::Display<hw::Screen>;
 
 mod hal;
 mod hw;
@@ -49,10 +51,11 @@ app! {
         static ENCODER: hw::Encoder = hw::Encoder;
         static LED: hw::Led = hw::Led;
         static CONTROLS: hw::Controls = hw::Controls;
+        static SCREEN: hw::Screen = hw::Screen;
     },
 
     idle: {
-        resources: [DRIVER, STEPPER, ENCODER, SYST, GPIOA, GPIOB, HALL, LED, CONTROLS],
+        resources: [DRIVER, STEPPER, ENCODER, SYST, GPIOA, GPIOB, HALL, LED, CONTROLS, SCREEN],
     },
 
     tasks: {
@@ -101,11 +104,10 @@ fn passivate(gpioa: &GPIOA, gpiob: &GPIOB) {
 fn init(p: init::Peripherals, r: init::Resources) {
     clock::setup(p.RCC, p.SYST, p.FLASH);
 
-    // Initialize hardware
+    // Initialize peripherals
     r.DRIVER.init(p.RCC, p.GPIOA);
     r.LED.init(p.GPIOA, p.RCC);
-    Screen.init(p.GPIOB, p.RCC);
-
+    r.SCREEN.init(p.RCC);
     r.ENCODER.init(p.GPIOA, p.RCC);
     r.ENCODER.set_current(0); // Start with 1 IPM
     r.ENCODER.set_limit(MAX_IPM);
@@ -113,18 +115,36 @@ fn init(p: init::Peripherals, r: init::Resources) {
     r.CONTROLS.init(p.GPIOA, p.RCC);
     r.HALL.init(p.TIM2, p.GPIOA, p.RCC);
 
+    // Disable unused inputs
     passivate(p.GPIOA, p.GPIOB);
 
 
     r.STEPPER.set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap();
+
+    // LCD device init
+    // Need to wait at least 40ms after Vcc rises to 2.7V
+    // STM32 could start much earlier than that
+    delay::ms(50);
+
+    init_screen();
 }
 
-fn estop(syst: &SYST, lcd: &mut Display) -> ! {
-    delay::ms(syst, 1); // Wait till power is back to normal
+fn init_screen() {
+    let mut lcd = Display::new(hw::Screen);
+
+    lcd.init(lcd::FunctionLine::Line2, lcd::FunctionDots::Dots5x8);
+    lcd.display(lcd::DisplayMode::DisplayOn, lcd::DisplayCursor::CursorOff, lcd::DisplayBlink::BlinkOff);
+    font::upload_characters(&mut lcd);
+    lcd.entry_mode(lcd::EntryModeDirection::EntryRight, lcd::EntryModeShift::NoShift);
+}
+
+fn estop() -> ! {
+    delay::ms(1); // Wait till power is back to normal
 
     // Immediately disable driver outputs
     ::hw::config::ENABLE.set(unsafe { &(*stm32f103xx::GPIOA.get()) }, 0);
 
+    let mut lcd = Display::new(hw::Screen);
     lcd.position(0, 0);
     write!(lcd, "*E-STOP*").unwrap();
     lcd.position(0, 1);
@@ -172,16 +192,9 @@ struct State {
     rpm: u32,
 }
 
-fn init_screen(r: &idle::Resources) {
-    let mut lcd = Screen.materialize(r.SYST, r.GPIOB);
-    lcd.init(lcd::FunctionLine::Line2, lcd::FunctionDots::Dots5x8);
-    lcd.display(lcd::DisplayMode::DisplayOn, lcd::DisplayCursor::CursorOff, lcd::DisplayBlink::BlinkOff);
-    font::upload_characters(&mut lcd);
-    lcd.entry_mode(lcd::EntryModeDirection::EntryRight, lcd::EntryModeShift::NoShift);
-}
+fn update_screen(state: &State) {
+    let mut lcd = Display::new(hw::Screen);
 
-fn update_screen(state: &State, r: &idle::Resources) {
-    let mut lcd = Screen.materialize(r.SYST, r.GPIOB);
     lcd.position(0, 0);
     let rrpm = (state.rpm + 128) >> 8;
     write!(&mut lcd, "{: >4} RPM", rrpm).unwrap();
@@ -199,12 +212,6 @@ fn update_screen(state: &State, r: &idle::Resources) {
 }
 
 fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
-    init_screen(&r);
-
-    // Need to wait at least 40ms after Vcc rises to 2.7V
-    // STM32 could start much earlier than that
-    delay::ms(r.SYST, 50);
-
     let mut state = State {
         run_state: RunState::Stopped,
         fast: false,
@@ -219,8 +226,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
     loop {
         if ::hw::config::ESTOP.get(r.GPIOB) == 0 {
             {
-                let mut lcd = Screen.materialize(r.SYST, r.GPIOB);
-                estop(r.SYST, &mut lcd);
+                estop();
             }
         }
 
@@ -229,7 +235,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
         handle_feed(&mut state, input, t, &mut r);
         handle_rpm(&mut state, t, &r);
 
-        update_screen(&state, &r);
+        update_screen(&state);
     }
 }
 

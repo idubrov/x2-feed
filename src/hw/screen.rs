@@ -1,61 +1,55 @@
 extern crate lcd;
 
-use hw::config::{RS, RW, E, DATA};
-use stm32f103xx::{GPIOB, SYST, RCC};
+use hw::config::lcd::{PORT, RS, RW, E, DATA};
+use stm32f103xx::{GPIOB, RCC};
+use stm32_extras::GPIOExtras;
 
 pub struct Screen;
 
 impl Screen {
-    pub fn init(&self, gpiob: &GPIOB, rcc: &RCC) {
+    pub fn init(&self, rcc: &RCC) {
         rcc.apb2enr.modify(|_, w| w.iopben().enabled());
 
-        // PB1 is RS
-        gpiob.crl.modify(|_, w| w.cnf1().push().mode1().output());
-        gpiob.crh.modify(|_, w| w
-            // PB10 is R/W
-            .cnf10().push().mode10().output()
-            // PB11 is E
-            .cnf11().push().mode11().output()
-            // PB12-PB15 are DB4-DB7
-            .cnf12().push().mode12().output()
-            .cnf13().push().mode13().output()
-            .cnf14().push().mode14().output()
-            .cnf15().push().mode15().output());
+        let port = self.port();
 
-        // R/W is always 0 -- we don't use wait flag
-        RW.set(gpiob, 0);
+        // Init data port, 4 bits
+        for i in 0..4 {
+            port.write_pin(DATA + i, false);
+            port.pin_config(DATA + i).push_pull().output2();
+        }
+
+        // Init control ports
+        port.pin_config(RS).push_pull().output2();
+        port.pin_config(RW).push_pull().output2();
+        port.pin_config(E).push_pull().output2();
+
+        port.write_pin(RS, false);
+        port.write_pin(RW, false);
+        port.write_pin(E, false);
     }
 
-    pub fn materialize<'a>(&self, syst: &'a SYST, gpiob: &'a GPIOB) -> lcd::Display<ScreenHAL<'a>> {
-        lcd::Display::new(ScreenHAL {
-            syst,
-            gpiob,
-        })
+    fn port(&self) -> &'static PORT {
+        unsafe { &*GPIOB.get() }
     }
 }
 
-/// Binding of HD44780 instance to real hardware
-pub struct ScreenHAL<'a> {
-    syst: &'a SYST,
-    gpiob: &'a GPIOB,
-}
 
-impl<'a> lcd::Hardware for ScreenHAL<'a> {
+impl lcd::Hardware for Screen {
     fn rs(&self, bit: bool) {
-        RS.set(self.gpiob, if bit { 1 } else { 0 });
+        self.port().write_pin(RS, bit);
     }
 
     fn enable(&self, bit: bool) {
-        E.set(self.gpiob, if bit { 1 } else { 0 });
+        self.port().write_pin(E, bit);
     }
 
     fn data(&self, data: u8) {
-        DATA.set(self.gpiob, u16::from(data));
+        self.port().write_pin_range(DATA, 4, u16::from(data));
     }
 }
 
-impl<'a> lcd::Delay for ScreenHAL<'a> {
+impl lcd::Delay for Screen {
     fn delay_us(&self, delay_usec: u32) {
-        ::hw::delay::us(self.syst, delay_usec);
+        ::hw::delay::us(delay_usec);
     }
 }

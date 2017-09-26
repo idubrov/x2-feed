@@ -5,11 +5,13 @@ use stm32f103xx::{GPIOA, GPIOB};
 
 use hw::gpio;
 
-// LCD
-pub const RS: gpio::PinRange<GPIOB> = gpio::PinRange::new(1, 1);
-pub const RW: gpio::PinRange<GPIOB> = gpio::PinRange::new(10, 1);
-pub const E: gpio::PinRange<GPIOB> = gpio::PinRange::new(11, 1);
-pub const DATA: gpio::PinRange<GPIOB> = gpio::PinRange::new(12, 4);
+pub mod lcd {
+    pub type PORT = super::GPIOB;
+    pub const RS: usize = 1; // PB1 is RS
+    pub const RW: usize = 10; // PB10 is RW
+    pub const E: usize = 11; // PB11 is E
+    pub const DATA: usize = 12; // PB12-PB15 are DB4-DB7
+}
 
 // LED
 pub const LED: gpio::PinRange<GPIOA> = gpio::PinRange::new(4, 1);

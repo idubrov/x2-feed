@@ -57,6 +57,5 @@ pub fn setup(rcc: &RCC, syst: &SYST, flash: &FLASH) {
 
     // Setup SysTick to run at 1ms
     // SysTick is 1/8 AHB (9Mhz)
-    syst.set_reload(9_000 - 1);
-    syst.clear_current();
+    syst.set_reload(0x00ffffff);
 }

@@ -1,5 +1,3 @@
-extern crate lcd;
-
 pub mod config; // FIXME: hide..
 pub mod gpio;
 pub mod clock;
@@ -12,7 +10,6 @@ mod controls;
 mod hall;
 
 pub use self::screen::Screen;
-pub type Display<'a> = lcd::Display<self::screen::ScreenHAL<'a>>;
 pub use self::led::Led;
 pub use self::encoder::Encoder;
 pub use self::controls::Controls;

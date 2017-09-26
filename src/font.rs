@@ -1,5 +1,5 @@
 //! Custom LCD characters for the powerfeed
-use hw::Display;
+use super::Display;
 
 pub const LEFT : char = 1 as char;
 pub const RIGHT : char = 2 as char;
