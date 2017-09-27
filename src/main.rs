@@ -123,7 +123,7 @@ fn init(p: init::Peripherals, r: init::Resources) {
     r.ENCODER.set_limit(MAX_IPM);
 
     r.CONTROLS.init();
-    r.HALL.init(p.TIM2);
+    r.HALL.init();
 
     // Disable unused inputs
     passivate(p.GPIOA, p.GPIOB);
@@ -151,7 +151,7 @@ fn init_screen(r: &init::Resources) {
 fn estop(screen: &ScreenResource) -> ! {
     delay::ms(1); // Wait till power is back to normal
 
-    // Immediately disable driver outputs
+    // Immediately disable driver outputs, do it without claiming the driver
     let gpioa = unsafe { &(*stm32f103xx::GPIOA.get()) };
     gpioa.write_pin(config::DRIVER_ENABLE_PIN, false);
 

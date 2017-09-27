@@ -41,7 +41,8 @@ impl <Port> RpmSensorImpl<Port> where Port: Deref<Target = gpioa::RegisterBlock>
         RpmSensorImpl { port, pin, captured: 0, msb: 0 }
     }
 
-    pub fn init(&mut self, tim2: &TIM2) {
+    pub fn init(&mut self) {
+        let tim2 = self.unsafe_timer(); // Timer is completely owned by the sensor
         let port = self.port();
 
         port.pin_config(self.pin).input().pull_up_down();
