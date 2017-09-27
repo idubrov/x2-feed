@@ -21,7 +21,7 @@ impl <Port> Led<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
         port.write_pin(self.pin, true); // off
     }
 
-    pub fn set<'a>(&self, on: bool) {
+    pub fn set(&self, on: bool) {
         self.port().write_pin(self.pin, !on);
     }
 
