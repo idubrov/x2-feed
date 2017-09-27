@@ -68,12 +68,10 @@ impl <Port> StepperDriverImpl<Port> where Port: Deref<Target = gpioa::RegisterBl
         port.write_pin(self.enable, false);
         port.write_pin(self.reset, false); // Start in reset mode
 
-        // FIXME: use safe API!
-        port.crh.modify(|_, w| w
-            .mode8().output50().cnf8().alt_open()
-            .mode9().output50().cnf9().open()
-            .mode10().output50().cnf10().open()
-            .mode11().output50().cnf11().open());
+        port.pin_config(self.step).output50().open_drain().alternate();
+        port.pin_config(self.dir).output50().open_drain();
+        port.pin_config(self.enable).output50().open_drain();
+        port.pin_config(self.reset).output50().open_drain();
 
         // Prescaler
         tim1.psc.write(|w| w.psc().bits(((super::clock::FREQUENCY / DRIVER_TICK_FREQUENCY) - 1) as u16));
