@@ -1,11 +1,11 @@
-use hal::{Controls, ControlsState, StepperDriver, RpmSensor};
+use hal::{ControlsState, StepperDriver, RpmSensor};
 use idle;
 use config::{Display, StepperDriverResource};
 use font;
 use rtfm::{Resource, Threshold};
 use stepper;
 use estop;
-use super::Menu;
+use super::{Menu, MenuResult};
 use core::fmt::Write;
 
 // FIXME: move to EEPROM?
@@ -31,7 +31,7 @@ pub struct FeedMenu {
     slow_ipm: u16,
     fast_ipm: u16,
     ipm: u16,
-    rpm: u32,
+    rpm: u32
 }
 
 impl FeedMenu {
@@ -137,12 +137,11 @@ impl FeedMenu {
         }
     }
 
-    fn run_feed(&mut self, t: &mut Threshold, r: &mut idle::Resources) {
+    fn run_feed(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
         stepper_command(t, r, |s, _|
             s.set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap());
         r.ENCODER.set_current(self.slow_ipm - 1);
         r.ENCODER.set_limit(MAX_IPM);
-
 
         loop {
             estop::check(&mut Display::new(r.SCREEN));
@@ -157,8 +156,12 @@ impl FeedMenu {
 }
 
 impl Menu for FeedMenu {
-    fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources) {
+    fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
         self.run_feed(t, r)
+    }
+
+    fn label(&self) -> &'static str {
+        "Feed (IPM)"
     }
 }
 

@@ -1,6 +1,7 @@
 #![feature(const_fn)]
 #![feature(used)]
 #![feature(proc_macro)]
+#![feature(try_trait)]
 #![no_std]
 #![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #![cfg_attr(feature = "cargo-clippy", allow(eq_op))]
@@ -35,7 +36,7 @@ use config::*;
 use rtfm::{app, Threshold};
 use hal::{clock, delay};
 use eeprom::EEPROM;
-use menu::{Menu, feed};
+use menu::{Menu, MainMenu};
 
 mod hal;
 mod config;
@@ -149,9 +150,9 @@ fn init_screen(r: &init::Resources) {
 
 
 fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
-    let mut feed = feed::FeedMenu::new();
+    let mut menu = MainMenu::new();
     loop {
-        feed.run(t, &mut r);
+        menu.run(t, &mut r).unwrap();
     }
 }
 

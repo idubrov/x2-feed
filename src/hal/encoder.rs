@@ -5,15 +5,14 @@ use stm32_hal::gpio::Port;
 
 pub struct QuadEncoder<Port: 'static> {
     port: Peripheral<Port>,
-    btn: usize,
     dt: usize,
     clk: usize
 }
 unsafe impl <Port> Send for QuadEncoder<Port> { }
 
 impl <Port> QuadEncoder<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
-    pub const fn new(port: Peripheral<Port>, btn: usize, dt: usize, clk: usize) -> QuadEncoder<Port> {
-        QuadEncoder { port, btn, dt, clk }
+    pub const fn new(port: Peripheral<Port>, dt: usize, clk: usize) -> QuadEncoder<Port> {
+        QuadEncoder { port, dt, clk }
     }
 
     // Note that we require an explicit ownership of I/O port peripheral to guard against
@@ -22,7 +21,6 @@ impl <Port> QuadEncoder<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
         let tim3 = self.unsafe_timer();
 
         let port = self.port();
-        port.pin_config(self.btn).floating();
         port.pin_config(self.dt).floating();
         port.pin_config(self.clk).floating();
 

@@ -11,8 +11,8 @@ pub const fn screen() -> ScreenResource {
 
 pub type QuadEncoderResource = hal::QuadEncoder<GPIOA>;
 pub const fn encoder() -> QuadEncoderResource {
-    // PA5 is button, PA6 is DT, PA7 is CLK
-    QuadEncoderResource::new(GPIOA, 5, 6, 7)
+    // PA5 is button (not used), PA6 is DT, PA7 is CLK
+    QuadEncoderResource::new(GPIOA, 6, 7)
 }
 
 // Emergency stop
@@ -33,10 +33,10 @@ pub const fn led() -> LedResource {
     LedResource::new(GPIOA, 4)
 }
 
-pub type ControlsResource = hal::ControlsImpl<GPIOA>;
+pub type ControlsResource = hal::Controls<GPIOA>;
 pub const fn controls() -> ControlsResource {
-    // PA1 is left, PA2 is right, PA3 is fast
-    ControlsResource::new(GPIOA, 1, 2, 3)
+    // PA1 is left, PA2 is right, PA3 is fast, PA5 is encoder button
+    ControlsResource::new(GPIOA, 1, 2, 3, 5)
 }
 
 pub type RpmSensorResource = hal::RpmSensorImpl<GPIOA>;
