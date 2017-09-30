@@ -2,21 +2,26 @@ use stepgen;
 
 use hal::StepperDriver;
 
-#[derive(Clone, Copy, PartialEq)]
-enum State {
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum State {
     /// Not stepping
     Stopped,
     /// Stepping and stop command was requested
-    StopRequested,
+    StopRequested(bool),
     /// Stopping the motor
-    Stopping,
+    Stopping(bool),
     /// Stepper motor is running
-    Running,
+    Running(bool),
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Error {
+    /// Stepper is not stopped to run given command
+    NotStopped
 }
 
 pub struct Stepper {
     stepgen: stepgen::Stepgen,
-    direction: bool,
 
     base_step: u32,
     position: i32,
@@ -34,7 +39,6 @@ impl Stepper {
     pub const fn new(freq: u32) -> Stepper {
         Stepper {
             stepgen: stepgen::Stepgen::new(freq),
-            direction: true,
             base_step: 0,
             position: 0,
             state: State::Stopped,
@@ -67,19 +71,19 @@ impl Stepper {
 
     pub fn step_completed(&mut self, driver: &mut StepperDriver) {
         match self.state {
-            State::StopRequested => {
+            State::StopRequested(dir) => {
                 // Initiate stopping sequence -- set target step to 0
                 self.stepgen.set_target_step(0);
-                self.state = State::Stopping
+                self.state = State::Stopping(dir)
             },
-            State::Stopping if !driver.is_running() => {
+            State::Stopping(dir) if !driver.is_running() => {
                 driver.enable(false);
                 self.state = State::Stopped;
 
                 // Update internal position counter. We do it at the end to reduce amount of work
                 // we do per step (direction could not be changed while running, so all steps go
                 // in one direction).
-                self.update_position();
+                self.update_position(dir);
                 return; // Do not preload the delay -- we are stopped now
             },
             State::Stopped =>
@@ -91,45 +95,37 @@ impl Stepper {
     }
 
     // Incorporate outstanding steps from the stepgen into current position
-    fn update_position(&mut self) {
+    fn update_position(&mut self, dir: bool) {
         let step = self.stepgen.current_step();
         let offset = (step - self.base_step) as i32;
         self.base_step = step;
-        if self.direction {
+        if dir {
             self.position += offset;
         } else {
             self.position -= offset;
         }
     }
 
-    fn set_direction(&mut self, driver: &mut StepperDriver, dir: bool) {
-        driver.direction(dir);
-        self.direction = dir;
-    }
-
     /// Move to given position. Note that no new move commands will be accepted while stepper is
     /// running. However, other target parameter, target speed, could be changed any time.
-    pub fn move_to(&mut self, driver: &mut StepperDriver, target: i32) -> bool {
-        if !self.is_stopped() {
-            return false;
+    pub fn move_to(&mut self, driver: &mut StepperDriver, target: i32) -> Result<(), Error> {
+        if self.state != State::Stopped {
+            return Err(Error::NotStopped);
         }
 
-        let delta;
-        if self.position < target {
-            delta = (target - self.position) as u32;
-            self.set_direction(driver, true);
-        } else if self.position > target {
-            delta = (self.position - target) as u32;
-            self.set_direction(driver, false);
-        } else {
+        if self.position == target {
             // Nothing to do!
-            return true;
+            return Ok(());
         }
 
-        self.state = State::Running;
-        self.stepgen.set_target_step(self.base_step + delta);
+        let delta = target - self.position;
+        let dir = delta > 0;
 
-        // Enable driver outputs
+        self.state = State::Running(dir);
+        self.stepgen.set_target_step(self.base_step + (delta.abs() as u32));
+
+        // Set direction and enable driver outputs
+        driver.direction(dir);
         driver.enable(true);
 
         // Start pulse generation
@@ -138,17 +134,18 @@ impl Stepper {
 
         // Immediately preload the second delay
         self.preload_delay(driver);
-        true
+        Ok(())
     }
 
 
     pub fn stop(&mut self) {
-        if self.state == State::Running {
-            self.state = State::StopRequested
+        if let State::Running(dir) = self.state {
+            self.state = State::StopRequested(dir);
         }
     }
 
-    pub fn is_stopped(&self) -> bool {
-        self.state == State::Stopped
+    /// Get the stepper state
+    pub fn state(&self) -> State {
+        self.state
     }
 }

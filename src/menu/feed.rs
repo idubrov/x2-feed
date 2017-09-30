@@ -18,16 +18,7 @@ const ACCELERATION: u32 = 1200; // Steps per second per second
 const STEPS_PER_ROTATION: u32 = 200;
 
 
-#[derive(Clone, Copy)]
-enum RunState {
-    Stopped,
-    Stopping,
-    RunningLeft,
-    RunningRight
-}
-
 pub struct FeedMenu {
-    run_state: RunState,
     speed: u32,
     slow_ipm: u16,
     fast_ipm: u16,
@@ -38,7 +29,6 @@ pub struct FeedMenu {
 impl FeedMenu {
     pub fn new() -> FeedMenu {
         FeedMenu {
-            run_state: RunState::Stopped,
             speed: 0,
             // Offset by 1, as IPM of 0 is not allowed.
             slow_ipm: 10 - 1,
@@ -48,19 +38,21 @@ impl FeedMenu {
         }
     }
 
-    fn update_screen(&self, r: &mut idle::Resources) {
+    fn update_screen(&self, t: &mut Threshold, r: &mut idle::Resources) {
+        let run_state = stepper_command(t, r, |s, _| s.state());
+        let is_fast = r.CONTROLS.state().fast;
+
         let mut lcd = Display::new(r.SCREEN);
         lcd.position(0, 0);
         let rrpm = (self.rpm + 128) >> 8;
         write!(lcd, "{: >4} RPM", rrpm).unwrap();
 
         lcd.position(0, 1);
-        let s = (r.CONTROLS.state().fast, self.run_state);
-        let c = match s {
-            (false, RunState::RunningLeft) => font::LEFT,
-            (false, RunState::RunningRight) => font::RIGHT,
-            (true, RunState::RunningLeft) => font::FAST_LEFT,
-            (true, RunState::RunningRight) => font::FAST_RIGHT,
+        let c = match (run_state, is_fast) {
+            (stepper::State::Running(false), false) => font::LEFT,
+            (stepper::State::Running(true), false) => font::RIGHT,
+            (stepper::State::Running(false), true) => font::FAST_LEFT,
+            (stepper::State::Running(true), true) => font::FAST_RIGHT,
             _ => ' '
         };
         write!(lcd, "{}{: >3} IPM", c, u32::from(self.ipm + 1)).unwrap();
@@ -95,30 +87,21 @@ impl FeedMenu {
     }
 
     fn handle_feed(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources) {
-        match (self.run_state, event) {
-            (RunState::Stopped, Pressed(Left)) => {
+        let run_state = stepper_command(t, r, |s, _| s.state());
+        match (run_state, event) {
+            (stepper::State::Stopped, Pressed(Left)) => {
                 // Use very low number for moving left
-                stepper_command(t, r, |s, d| { s.move_to(d, -1_000_000_000); });
-                self.run_state = RunState::RunningLeft;
+                stepper_command(t, r, |s, d| { s.move_to(d, -1_000_000_000).unwrap(); });
             }
 
-            (RunState::Stopped, Pressed(Right)) => {
+            (stepper::State::Stopped, Pressed(Right)) => {
                 // Use very high number for moving right
-                stepper_command(t, r, |s, d| { s.move_to(d, 1_000_000_000); });
-                self.run_state = RunState::RunningRight;
+                stepper_command(t, r, |s, d| { s.move_to(d, 1_000_000_000).unwrap(); });
             }
 
-            (RunState::RunningLeft, Unpressed(Left)) |
-            (RunState::RunningRight, Unpressed(Right)) => {
-                stepper_command(t, r, |s, _| s.stop());
-                self.run_state = RunState::Stopping;
-            }
-
-            (RunState::Stopping, _) => {
-                if stepper_command(t, r, |s, _| s.is_stopped()) {
-                    self.run_state = RunState::Stopped;
-                }
-            }
+            (stepper::State::Running(false), Unpressed(Left)) |
+            (stepper::State::Running(true), Unpressed(Right)) =>
+                stepper_command(t, r, |s, _| s.stop()),
 
             _ => {}
         }
@@ -148,7 +131,7 @@ impl FeedMenu {
             self.handle_ipm(event, t, r);
             self.handle_feed(event, t, r);
             self.handle_rpm(t, r);
-            self.update_screen(r);
+            self.update_screen(t, r);
         }
     }
 }
