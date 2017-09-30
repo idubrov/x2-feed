@@ -11,38 +11,75 @@ pub struct ControlsState {
     pub button: bool
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum Button {
+    Left, Right, Fast, Encoder
+}
+
+const BUTTONS: [Button; 4] = [Button::Left, Button::Right, Button::Fast, Button::Encoder];
+
+#[derive(Clone, Copy, Debug)]
+pub enum Event {
+    Pressed(Button),
+    Unpressed(Button),
+    None
+}
+
 pub struct Controls<Port: 'static> {
     port: Peripheral<Port>,
-    left: usize,
-    right: usize,
-    fast: usize,
-    button: usize
+    pins: [u8; 4],
+    last: [bool; 4]
 }
 unsafe impl <Port> Send for Controls<Port> { }
 
 impl <Port> Controls<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
-    pub const fn new(port: Peripheral<Port>, left: usize, right: usize, fast: usize, button: usize) -> Controls<Port> {
-        Controls { port, left, right, fast, button }
+    pub const fn new(port: Peripheral<Port>, left: u8, right: u8, fast: u8, encoder: u8) -> Controls<Port> {
+        Controls {
+            port,
+            pins: [left, right, fast, encoder],
+            last: [false; 4]
+        }
     }
 
     pub fn init(&self) {
         let port = self.port();
-        port.pin_config(self.left).input().floating();
-        port.pin_config(self.right).input().floating();
-        port.pin_config(self.fast).input().floating();
-        port.pin_config(self.button).input().floating();
+        for pin in self.pins.iter() {
+            port.pin_config(*pin as usize).input().floating();
+        }
     }
 
     pub fn state(&self) -> ControlsState {
         let values = self.port().idr.read().bits();
 
-        let left = (values & (1 << self.left)) != 0;
-        let right = (values & (1 << self.right)) != 0;
-        let fast = (values & (1 << self.fast)) != 0;
-        let button = (values & (1 << self.button)) != 0;
+        let mut pressed: [bool; 4] = [false; 4];
+        for (idx, pin) in self.pins.iter().enumerate() {
+            pressed[idx] = (values & (1 << *pin)) != 0;
+        }
 
-        ControlsState { left, right, fast, button }
+        ControlsState {
+            left: pressed[0],
+            right: pressed[1],
+            fast: pressed[2],
+            button: pressed[3]
+        }
     }
+
+    pub fn read_event(&mut self) -> Event {
+        let data = self.port().idr.read().bits();
+
+        for (idx, pin) in self.pins.iter().enumerate() {
+            let state = (data & (1 << *pin)) != 0;
+            if state && !self.last[idx] {
+                self.last[idx] = true;
+                return Event::Pressed(BUTTONS[idx])
+            } else if !state && self.last[idx] {
+                self.last[idx] = false;
+                return Event::Unpressed(BUTTONS[idx])
+            }
+        }
+        Event::None
+    }
+
 
     fn port(&self) -> &Port {
         unsafe { &*self.port.get() }
