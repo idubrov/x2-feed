@@ -64,6 +64,10 @@ impl <Port> Controls<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
         }
     }
 
+    /// Check buttons state, compare with the previous one and return Pressed/Unpressed event if
+    /// state was changed.
+    /// # Note
+    /// Only handles one pin at a time.
     pub fn read_event(&mut self) -> Event {
         let data = self.port().idr.read().bits();
 
