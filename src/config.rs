@@ -1,13 +1,15 @@
 use stm32f103xx::{GPIOA, GPIOB};
 use hal;
+use lcd;
 
 pub type ScreenResource = hal::Screen<GPIOB>;
+pub type Display<'a> = lcd::Display<'a, ScreenResource>;
 pub const fn screen() -> ScreenResource {
     // PB1 is RS, PB10 is RW, PB11 is E, PB12-PB15 are DB4-DB7
     ScreenResource::new(GPIOB, 1, 10, 11, 12)
 }
 
-pub type QuadEncoderResource = hal::QuadEncoderImpl<GPIOA>;
+pub type QuadEncoderResource = hal::QuadEncoder<GPIOA>;
 pub const fn encoder() -> QuadEncoderResource {
     // PA5 is button, PA6 is DT, PA7 is CLK
     QuadEncoderResource::new(GPIOA, 5, 6, 7)

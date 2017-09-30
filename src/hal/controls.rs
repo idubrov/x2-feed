@@ -1,7 +1,7 @@
 use bare_metal::Peripheral;
 use stm32f103xx::gpioa;
 use core::ops::Deref;
-use stm32_extras::GPIOExtras;
+use stm32_hal::gpio::Port;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ControlsState {

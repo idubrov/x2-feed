@@ -1,7 +1,7 @@
 use bare_metal::Peripheral;
 use stm32f103xx::gpioa;
 use core::ops::Deref;
-use stm32_extras::GPIOExtras;
+use stm32_hal::gpio::Port;
 
 use stm32f103xx::TIM2;
 use super::clock::FREQUENCY;

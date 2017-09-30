@@ -24,12 +24,16 @@ features = ["rt"]
 [dependencies.lcd]
 version = "0.3.0"
 
-[dependencies.stm32-extras]
-version = "0.1.0"
-features = [ "use-stm32f103xx" ]
+[dependencies.stm32-hal]
+version = "0.2.0"
+features = ["use-stm32f103xx"]
 
 [dependencies.bare-metal]
 version = "0.1.1"
+
+[dependencies.eeprom]
+version = "0.1.0"
+features = ["use-stm32f103xx"]
 
 [profile]
 

@@ -1,30 +1,19 @@
 use bare_metal::Peripheral;
 use stm32f103xx::{gpioa, TIM3};
 use core::ops::Deref;
-use stm32_extras::GPIOExtras;
+use stm32_hal::gpio::Port;
 
-pub trait QuadEncoder {
-    /// Set rotary encoder limit.
-    fn set_limit(&mut self, limit : u16);
-
-    /// Get current value of the rotary encoder.
-    fn current(&self) -> u16;
-
-    /// Set current value of the rotary encoder.
-    fn set_current(&mut self, pos: u16);
-}
-
-pub struct QuadEncoderImpl<Port: 'static> {
+pub struct QuadEncoder<Port: 'static> {
     port: Peripheral<Port>,
     btn: usize,
     dt: usize,
     clk: usize
 }
-unsafe impl <Port> Send for QuadEncoderImpl<Port> { }
+unsafe impl <Port> Send for QuadEncoder<Port> { }
 
-impl <Port> QuadEncoderImpl<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
-    pub const fn new(port: Peripheral<Port>, btn: usize, dt: usize, clk: usize) -> QuadEncoderImpl<Port> {
-        QuadEncoderImpl { port, btn, dt, clk }
+impl <Port> QuadEncoder<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
+    pub const fn new(port: Peripheral<Port>, btn: usize, dt: usize, clk: usize) -> QuadEncoder<Port> {
+        QuadEncoder { port, btn, dt, clk }
     }
 
     // Note that we require an explicit ownership of I/O port peripheral to guard against
@@ -52,26 +41,26 @@ impl <Port> QuadEncoderImpl<Port> where Port: Deref<Target = gpioa::RegisterBloc
         tim3.cr1.write(|w| w.cen().enabled());
     }
 
+    /// Set rotary encoder limit.
+    pub fn set_limit(&mut self, limit : u16) {
+        self.unsafe_timer().arr.write(|w| w.arr().bits((limit * 2) - 1));
+    }
+
+    /// Get current value of the rotary encoder.
+    pub fn current(&self) -> u16 {
+        self.unsafe_timer().cnt.read().cnt().bits() / 2
+    }
+
+    /// Set current value of the rotary encoder.
+    pub fn set_current(&mut self, pos: u16) {
+        self.unsafe_timer().cnt.write(|w| w.cnt().bits(pos * 2));
+    }
+
     fn unsafe_timer(&self) -> &'static TIM3 {
         unsafe { &*TIM3.get() }
     }
 
     fn port(&self) -> &Port {
         unsafe { &*self.port.get() }
-    }
-}
-
-impl <Port> QuadEncoder for QuadEncoderImpl<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
-
-    fn set_limit(&mut self, limit : u16) {
-        self.unsafe_timer().arr.write(|w| w.arr().bits((limit * 2) - 1));
-    }
-
-    fn current(&self) -> u16 {
-        self.unsafe_timer().cnt.read().cnt().bits() / 2
-    }
-
-    fn set_current(&mut self, pos: u16) {
-        self.unsafe_timer().cnt.write(|w| w.cnt().bits(pos * 2));
     }
 }

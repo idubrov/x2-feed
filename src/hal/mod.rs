@@ -9,7 +9,7 @@ pub mod delay;
 
 pub use self::driver::{StepperDriver, StepperDriverImpl};
 pub use self::rpm::{RpmSensor, RpmSensorImpl};
-pub use self::encoder::{QuadEncoder, QuadEncoderImpl};
+pub use self::encoder::QuadEncoder;
 pub use self::controls::{Controls, ControlsImpl, ControlsState};
 pub use self::led::Led as Led;
 pub use self::screen::Screen;
