@@ -43,7 +43,7 @@ impl <Port> Controls<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
 
     pub fn init(&self) {
         let port = self.port();
-        for pin in self.pins.iter() {
+        for pin in &self.pins {
             port.pin_config(*pin as usize).input().floating();
         }
     }
