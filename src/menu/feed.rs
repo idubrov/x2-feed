@@ -1,4 +1,4 @@
-use hal::{RpmSensor, Event};
+use hal::Event;
 use hal::Event::*;
 use hal::Button::*;
 use idle;

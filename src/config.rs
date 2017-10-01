@@ -39,7 +39,7 @@ pub const fn controls() -> ControlsResource {
     ControlsResource::new(GPIOA, 1, 2, 3, 5)
 }
 
-pub type RpmSensorResource = hal::RpmSensorImpl<GPIOA>;
+pub type RpmSensorResource = hal::RpmSensor<GPIOA>;
 pub const fn hall() -> RpmSensorResource {
     // PA0 is hall encoder
     RpmSensorResource::new(GPIOA, 0)

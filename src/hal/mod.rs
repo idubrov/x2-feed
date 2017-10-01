@@ -8,7 +8,7 @@ pub mod clock;
 pub mod delay;
 
 pub use self::driver::{StepperDriver, StepperDriverImpl};
-pub use self::rpm::{RpmSensor, RpmSensorImpl};
+pub use self::rpm::RpmSensor;
 pub use self::encoder::QuadEncoder;
 pub use self::controls::{Controls, ControlsState, Event, Button};
 pub use self::led::Led as Led;

@@ -6,15 +6,6 @@ use stm32_hal::gpio::Port;
 use stm32f103xx::TIM2;
 use super::clock::FREQUENCY;
 
-pub trait RpmSensor {
-    /// Get latest captured RPM, in 24.8 format
-    fn rpm(&self) -> u32;
-
-    /// Check for pending interrupt and handle it (reset pending flag). Returns `true` if interrupt
-    /// was pending.
-    fn interrupt(&mut self) -> bool;
-}
-
 const HALL_TICK_FREQUENCY: u32 = 100_000; // 0.01 ms
 const HALL_MAX_RPM: u32 = 6000;
 const HALL_MIN_RPM: u32 = 50;
@@ -28,17 +19,17 @@ const MIN_PERIOD: u32 = 60 * HALL_TICK_FREQUENCY / HALL_MAX_RPM;
 // its high 16 bits. If computed period is longer than that, it is assumed that spindle is stopped.
 const MAX_MSB: u32 = ((60 * HALL_TICK_FREQUENCY) / HALL_MIN_RPM + 0xffffu32) >> 16;
 
-pub struct RpmSensorImpl<Port: 'static> {
+pub struct RpmSensor<Port: 'static> {
     port: Peripheral<Port>,
     pin: usize,
     captured: u32,
     msb: u32,
 }
-unsafe impl <Port> Send for RpmSensorImpl<Port> { }
+unsafe impl <Port> Send for RpmSensor<Port> { }
 
-impl <Port> RpmSensorImpl<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
-    pub const fn new(port: Peripheral<Port>, pin: usize) -> RpmSensorImpl<Port> {
-        RpmSensorImpl { port, pin, captured: 0, msb: 0 }
+impl <Port> RpmSensor<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
+    pub const fn new(port: Peripheral<Port>, pin: usize) -> RpmSensor<Port> {
+        RpmSensor { port, pin, captured: 0, msb: 0 }
     }
 
     pub fn init(&mut self) {
@@ -87,18 +78,9 @@ impl <Port> RpmSensorImpl<Port> where Port: Deref<Target = gpioa::RegisterBlock>
             .cen().enabled());
     }
 
-    /// Completely owned by `Hall`
-    fn unsafe_timer(&self) -> &'static TIM2 {
-        unsafe { &*TIM2.get() }
-    }
-
-    fn port(&self) -> &Port {
-        unsafe { &*self.port.get() }
-    }
-}
-
-impl <Port> RpmSensor for RpmSensorImpl<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
-    fn interrupt(&mut self) -> bool {
+    /// Check for pending interrupt and handle it (reset pending flag). Returns `true` if interrupt
+    /// was pending.
+    pub fn interrupt(&mut self) -> bool {
         let tim2 = self.unsafe_timer();
 
         if tim2.sr.read().cc1if().bit_is_set() {
@@ -146,7 +128,17 @@ impl <Port> RpmSensor for RpmSensorImpl<Port> where Port: Deref<Target = gpioa::
         }
     }
 
-    fn rpm(&self) -> u32 {
+    /// Get latest captured RPM, in 24.8 format
+    pub fn rpm(&self) -> u32 {
         if self.captured != 0 { ((60 * HALL_TICK_FREQUENCY) << 8) / self.captured } else { 0 }
+    }
+
+    /// Completely owned by `Hall`
+    fn unsafe_timer(&self) -> &'static TIM2 {
+        unsafe { &*TIM2.get() }
+    }
+
+    fn port(&self) -> &Port {
+        unsafe { &*self.port.get() }
     }
 }
