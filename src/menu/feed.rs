@@ -9,6 +9,7 @@ use stepper;
 use estop;
 use super::{Menu, MenuResult};
 use core::fmt::Write;
+use cortex_m;
 
 // FIXME: move to EEPROM?
 const PITCH: u32 = 16;
@@ -66,13 +67,13 @@ impl FeedMenu {
                 self.slow_ipm = ipm;
                 ipm = self.fast_ipm;
                 r.ENCODER.set_current(ipm - 1);
-            },
+            }
             Unpressed(Fast) => {
                 // Switch to slow IPM
                 self.fast_ipm = ipm;
                 ipm = self.slow_ipm;
                 r.ENCODER.set_current(ipm - 1);
-            },
+            }
             _ => {}
         }
 
@@ -137,7 +138,7 @@ impl FeedMenu {
 
             if let Pressed(Encoder) = event {
                 self.stop_and_wait(t, r);
-                return Err(super::Exit);
+                return Ok(());
             }
         }
     }
@@ -153,7 +154,16 @@ impl FeedMenu {
             write!(lcd, "  ...").unwrap();
         }
 
-        while r.STEPPER.claim(t, |s, _t| s.state()) != stepper::State::Stopped {}
+        while r.STEPPER.claim(t, |s, _t| {
+            if let stepper::State::Stopped = s.state() {
+                return false;
+            }
+            // Wait for interrupt while we are owning stepper (to avoid race condition)
+            // We should still wake up if interrupt happens (but it won't be handled
+            // until we exit claim block).
+            cortex_m::asm::wfi();
+            return true;
+        }) {}
     }
 }
 

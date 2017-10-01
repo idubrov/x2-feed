@@ -8,11 +8,9 @@ use hal::Event::Pressed;
 pub mod feed;
 
 #[derive(Debug)]
-pub struct Next;
-#[derive(Debug)]
 pub struct Exit;
 
-pub type MenuResult = Result<Next, Exit>;
+pub type MenuResult = Result<(), Exit>;
 
 pub trait Menu {
     fn label(&self) -> &'static str;
@@ -43,18 +41,25 @@ impl Menu for MainMenu {
 
 // Generalized function to run a menu which consist of given slice of other menus.
 fn run_menu(items: &mut [&mut Menu], t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
-    r.ENCODER.set_current(0);
-    r.ENCODER.set_limit(items.len() as u16);
+    let mut selected = 0usize;
     loop {
-        let current: &mut Menu = items[r.ENCODER.current() as usize];
+        r.ENCODER.set_current(selected as u16);
+        r.ENCODER.set_limit(items.len() as u16);
 
-        if let Pressed(Encoder) = r.CONTROLS.read_event() {
-            Display::new(r.SCREEN).clear();
-            current.run(t, r)?;
+        Display::new(r.SCREEN).clear();
+        loop {
+            selected = r.ENCODER.current() as usize;
+            let current: &mut Menu = items[selected];
+
+            if let Pressed(Encoder) = r.CONTROLS.read_event() {
+                Display::new(r.SCREEN).clear();
+                current.run(t, r)?;
+                break;
+            }
+
+            let mut lcd = Display::new(r.SCREEN);
+            lcd.position(0, 0);
+            lcd.print(current.label());
         }
-
-        let mut lcd = Display::new(r.SCREEN);
-        lcd.position(0, 0);
-        lcd.print(current.label());
     }
 }
