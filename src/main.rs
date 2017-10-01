@@ -2,6 +2,7 @@
 #![feature(used)]
 #![feature(proc_macro)]
 #![feature(try_trait)]
+#![feature(lang_items)]
 #![no_std]
 #![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #![cfg_attr(feature = "cargo-clippy", allow(eq_op))]
@@ -37,6 +38,7 @@ use rtfm::{app, Threshold};
 use hal::{clock, delay};
 use eeprom::EEPROM;
 use menu::{Menu, MainMenu};
+use stm32_hal::gpio::Port;
 
 mod hal;
 mod config;
@@ -165,4 +167,15 @@ fn step_completed(_t: &mut Threshold, r: TIM1_UP_TIM10::Resources) {
 
 fn hall_interrupt(_t: &mut Threshold, r: TIM2::Resources) {
     r.HALL.interrupt();
+}
+
+#[lang = "panic_fmt"]
+unsafe extern "C" fn panic_fmt(_: ::core::fmt::Arguments, _: &'static str, _: u32, _: u32) -> ! {
+    // Immediately disable driver outputs, do it without claiming the driver
+    let gpioa = &(*stm32f103xx::GPIOA.get());
+    gpioa.write_pin(DRIVER_ENABLE_PIN, false);
+
+    loop {
+        cortex_m::asm::nop();
+    }
 }

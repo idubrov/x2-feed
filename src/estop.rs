@@ -13,12 +13,13 @@ pub fn check(lcd: &mut Display) {
 }
 
 fn estop(lcd: &mut Display) -> ! {
-    delay::ms(1); // Wait till power is back to normal
-
     // Immediately disable driver outputs, do it without claiming the driver
     let gpioa = unsafe { &(*stm32f103xx::GPIOA.get()) };
     gpioa.write_pin(DRIVER_ENABLE_PIN, false);
 
+    delay::ms(1); // Wait till power is back to normal
+
+    // Try to print something on the screen
     lcd.position(0, 0);
     write!(lcd, "*E-STOP*").unwrap();
     lcd.position(0, 1);

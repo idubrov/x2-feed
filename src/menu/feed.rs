@@ -1,4 +1,4 @@
-use hal::{StepperDriver, RpmSensor, Event};
+use hal::{RpmSensor, Event};
 use hal::Event::*;
 use hal::Button::*;
 use idle;
@@ -39,7 +39,7 @@ impl FeedMenu {
     }
 
     fn update_screen(&self, t: &mut Threshold, r: &mut idle::Resources) {
-        let run_state = stepper_command(t, r, |s, _| s.state());
+        let run_state = r.STEPPER.claim(t, |s, _t| s.state());
         let is_fast = r.CONTROLS.state().fast;
 
         let mut lcd = Display::new(r.SCREEN);
@@ -80,28 +80,28 @@ impl FeedMenu {
         // Shift by 8 to convert to 24.8 format
         let speed = (u32::from(ipm << 8) * PITCH * STEPS_PER_ROTATION * MICROSTEPS) / 60;
         if self.speed != speed {
-            stepper_command(t, r, |s, _| { s.set_speed(speed) }).unwrap();
+            r.STEPPER.claim_mut(t, |s, _t| s.set_speed(speed)).unwrap();
             self.speed = speed;
         }
         self.ipm = ipm
     }
 
     fn handle_feed(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources) {
-        let run_state = stepper_command(t, r, |s, _| s.state());
+        let run_state = r.STEPPER.claim(t, |s, _t| s.state());
         match (run_state, event) {
             (stepper::State::Stopped, Pressed(Left)) => {
                 // Use very low number for moving left
-                stepper_command(t, r, |s, d| { s.move_to(d, -1_000_000_000).unwrap(); });
+                move_to(t, r, -1_000_000_000);
             }
 
             (stepper::State::Stopped, Pressed(Right)) => {
                 // Use very high number for moving right
-                stepper_command(t, r, |s, d| { s.move_to(d, 1_000_000_000).unwrap(); });
+                move_to(t, r, 1_000_000_000);
             }
 
             (stepper::State::Running(false), Unpressed(Left)) |
             (stepper::State::Running(true), Unpressed(Right)) =>
-                stepper_command(t, r, |s, _| s.stop()),
+                r.STEPPER.claim_mut(t, |s, _t| s.stop()),
 
             _ => {}
         }
@@ -119,8 +119,10 @@ impl FeedMenu {
     }
 
     fn run_feed(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
-        stepper_command(t, r, |s, _|
-            s.set_acceleration((ACCELERATION * MICROSTEPS) << 8).unwrap());
+        let acceleration = (ACCELERATION * MICROSTEPS) << 8;
+        r.STEPPER.claim_mut(t, |s, _t|
+            s.set_acceleration(acceleration)).unwrap();
+
         r.ENCODER.set_current(self.slow_ipm - 1);
         r.ENCODER.set_limit(MAX_IPM);
 
@@ -132,7 +134,26 @@ impl FeedMenu {
             self.handle_feed(event, t, r);
             self.handle_rpm(t, r);
             self.update_screen(t, r);
+
+            if let Pressed(Encoder) = event {
+                self.stop_and_wait(t, r);
+                return Err(super::Exit);
+            }
         }
+    }
+
+    fn stop_and_wait(&self, t: &mut Threshold, r: &mut idle::Resources) {
+        r.STEPPER.claim_mut(t, |s, _t| s.stop());
+        {
+            let mut lcd = Display::new(r.SCREEN);
+            lcd.clear();
+            lcd.position(0, 0);
+            write!(lcd, "Stopping").unwrap();
+            lcd.position(0, 1);
+            write!(lcd, "  ...").unwrap();
+        }
+
+        while r.STEPPER.claim(t, |s, _t| s.state()) != stepper::State::Stopped {}
     }
 }
 
@@ -147,15 +168,12 @@ impl Menu for FeedMenu {
 }
 
 // Helper function to run stepper command. Claims both driver and stepper.
-fn stepper_command<T, CB>(t: &mut Threshold, r: &mut idle::Resources, cb: CB) -> T
-    where
-        CB: for<'a> FnOnce(&mut stepper::Stepper, &mut StepperDriver) -> T {
-
-    let stepper = &mut r.STEPPER;
+fn move_to(t: &mut Threshold, r: &mut idle::Resources, target: i32) {
     let driver = &mut r.DRIVER;
-    stepper.claim_mut(t, |stepper, t| {
+    r.STEPPER.claim_mut(t, |stepper, t| {
         driver.claim_mut(t, |driver, _t| {
-            cb(stepper, driver as &mut StepperDriverResource)
+            let driver: &mut StepperDriverResource = driver;
+            stepper.move_to(driver, target).unwrap()
         })
     })
 }
