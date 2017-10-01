@@ -169,8 +169,9 @@ fn hall_interrupt(_t: &mut Threshold, r: TIM2::Resources) {
     r.HALL.interrupt();
 }
 
+#[no_mangle]
 #[lang = "panic_fmt"]
-unsafe extern "C" fn panic_fmt(_: ::core::fmt::Arguments, _: &'static str, _: u32, _: u32) -> ! {
+pub unsafe extern "C" fn panic_fmt(_: ::core::fmt::Arguments, _: &'static str, _: u32, _: u32) -> ! {
     // Immediately disable driver outputs, do it without claiming the driver
     let gpioa = &(*stm32f103xx::GPIOA.get());
     gpioa.write_pin(DRIVER_ENABLE_PIN, false);
