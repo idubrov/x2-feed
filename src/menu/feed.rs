@@ -158,11 +158,11 @@ impl FeedMenu {
             if let stepper::State::Stopped = s.state() {
                 return false;
             }
-            // Wait for interrupt while we are owning stepper (to avoid race condition)
-            // We should still wake up if interrupt happens (but it won't be handled
-            // until we exit claim block).
+            // Enter WFI while we block stepper interrupt (via claim above), to avoid race conditions.
+            // We should still wake up if interrupt happens (but it won't be handled until we exit
+            // the claim block).
             cortex_m::asm::wfi();
-            return true;
+            true
         }) {}
     }
 }
