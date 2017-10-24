@@ -1,6 +1,4 @@
-use hal::Event;
-use hal::Event::*;
-use hal::Button::*;
+use hal::{Event, Button};
 use idle;
 use config::{Display, StepperDriverResource};
 use core::fmt;
@@ -8,7 +6,7 @@ use font;
 use rtfm::{Resource, Threshold};
 use stepper;
 use estop;
-use super::{MenuItem, MenuResult};
+use menu::{MenuItem, MenuResult};
 use core::fmt::Write;
 use cortex_m;
 use settings;
@@ -103,14 +101,16 @@ impl FeedMenu {
         let proto = if self.fast { self.fast_feed } else { self.slow_feed };
         let mut feed = proto.with_rate(r.ENCODER.current() + 1);
         match event {
-            Pressed(Fast) => {
+            Event::Pressed(Button::Fast) => {
                 // Switch to fast IPM
+                self.fast = true;
                 self.slow_feed = feed;
                 feed = self.fast_feed;
                 r.ENCODER.set_current(feed.rate() - 1);
             }
-            Unpressed(Fast) => {
+            Event::Unpressed(Button::Fast) => {
                 // Switch to slow IPM
+                self.fast = false;
                 self.fast_feed = feed;
                 feed = self.slow_feed;
                 r.ENCODER.set_current(feed.rate() - 1);
@@ -131,18 +131,18 @@ impl FeedMenu {
     fn update_movement(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources) {
         let run_state = r.STEPPER.claim(t, |s, _t| s.state());
         match (run_state, event) {
-            (stepper::State::Stopped, Pressed(Left)) => {
+            (stepper::State::Stopped, Event::Pressed(Button::Left)) => {
                 // Use very low number for moving left
                 move_to(t, r, -1_000_000_000);
             }
 
-            (stepper::State::Stopped, Pressed(Right)) => {
+            (stepper::State::Stopped, Event::Pressed(Button::Right)) => {
                 // Use very high number for moving right
                 move_to(t, r, 1_000_000_000);
             }
 
-            (stepper::State::Running(false), Unpressed(Left)) |
-            (stepper::State::Running(true), Unpressed(Right)) =>
+            (stepper::State::Running(false), Event::Unpressed(Button::Left)) |
+            (stepper::State::Running(true), Event::Unpressed(Button::Right)) =>
                 r.STEPPER.claim_mut(t, |s, _t| s.stop()),
 
             _ => {}
@@ -180,7 +180,7 @@ impl FeedMenu {
             self.update_rpm(rpm);
             self.update_screen(t, r, feed);
 
-            if let Pressed(Encoder) = event {
+            if let Event::Pressed(Button::Encoder) = event {
                 self.stop_and_wait(t, r);
                 return MenuResult::Ok;
             }
