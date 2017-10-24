@@ -6,7 +6,7 @@
 #![no_std]
 #![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #![cfg_attr(feature = "cargo-clippy", allow(eq_op))]
-#![deny(warnings)]
+//#![deny(warnings)]
 
 //! Stepper-motor based power feed for X2 mill.
 //!
@@ -34,10 +34,10 @@ extern crate eeprom;
 use stm32f103xx::{GPIOA, GPIOB};
 use hal::*;
 use config::*;
-use rtfm::{app, Threshold};
+use rtfm::{app, Threshold, Resource};
 use hal::{clock, delay};
 use eeprom::EEPROM;
-use menu::{Menu, MainMenu};
+use menu::{MenuItem, MainMenu};
 use stm32_hal::gpio::Port;
 
 mod hal;
@@ -46,6 +46,7 @@ mod font;
 mod stepper;
 mod menu;
 mod estop;
+mod settings;
 
 app! {
     device: stm32f103xx,
@@ -61,7 +62,7 @@ app! {
     },
 
     idle: {
-        resources: [DRIVER, STEPPER, ENCODER, SYST, GPIOA, GPIOB, HALL, LED, CONTROLS, SCREEN],
+        resources: [DRIVER, STEPPER, ENCODER, SYST, GPIOA, GPIOB, HALL, LED, CONTROLS, SCREEN, FLASH],
     },
 
     tasks: {
@@ -152,9 +153,12 @@ fn init_screen(r: &init::Resources) {
 
 
 fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
+    let reversed = settings::IS_REVERSED.read(r.FLASH) != 0;
+    r.DRIVER.claim_mut(t, |d, _t| d.set_reversed(reversed));
+
     let mut menu = MainMenu::new();
     loop {
-        menu.run(t, &mut r).unwrap();
+        menu.run(t, &mut r);
     }
 }
 

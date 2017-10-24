@@ -3,16 +3,18 @@ use hal::Event::*;
 use hal::Button::*;
 use idle;
 use config::{Display, StepperDriverResource};
+use core::fmt;
 use font;
 use rtfm::{Resource, Threshold};
 use stepper;
 use estop;
-use super::{Menu, MenuResult};
+use super::{MenuItem, MenuResult};
 use core::fmt::Write;
 use cortex_m;
+use settings::IS_LATHE;
 
 // FIXME: move to EEPROM?
-const PITCH: u32 = 16;
+const PITCH: u32 = 16; // 12 for lathe
 const MICROSTEPS: u32 = 16;
 const MAX_IPM: u16 = 30;
 const ACCELERATION: u32 = 1200; // Steps per second per second
@@ -31,9 +33,8 @@ impl FeedMenu {
     pub fn new() -> FeedMenu {
         FeedMenu {
             speed: 0,
-            // Offset by 1, as IPM of 0 is not allowed.
-            slow_ipm: 10 - 1,
-            fast_ipm: 30 - 1,
+            slow_ipm: 10,
+            fast_ipm: 30,
             rpm: 0,
             ipm: 0,
         }
@@ -56,10 +57,10 @@ impl FeedMenu {
             (stepper::State::Running(true), true) => font::FAST_RIGHT,
             _ => ' '
         };
-        write!(lcd, "{}{: >3} IPM", c, u32::from(self.ipm + 1)).unwrap();
+        write!(lcd, "{}{: >3} IPM", c, u32::from(self.ipm)).unwrap();
     }
 
-    fn handle_ipm(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources) {
+    fn handle_feed_rate(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources) {
         let mut ipm = r.ENCODER.current() + 1; // Encoder is off by one (as it starts from 0)
         match event {
             Pressed(Fast) => {
@@ -120,6 +121,8 @@ impl FeedMenu {
     }
 
     fn run_feed(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
+        Display::new(r.SCREEN).clear();
+
         let acceleration = (ACCELERATION * MICROSTEPS) << 8;
         r.STEPPER.claim_mut(t, |s, _t|
             s.set_acceleration(acceleration)).unwrap();
@@ -131,14 +134,14 @@ impl FeedMenu {
             estop::check(&mut Display::new(r.SCREEN));
 
             let event = r.CONTROLS.read_event();
-            self.handle_ipm(event, t, r);
+            self.handle_feed_rate(event, t, r);
             self.handle_feed(event, t, r);
             self.handle_rpm(t, r);
             self.update_screen(t, r);
 
             if let Pressed(Encoder) = event {
                 self.stop_and_wait(t, r);
-                return Ok(());
+                return MenuResult::Ok
             }
         }
     }
@@ -167,13 +170,19 @@ impl FeedMenu {
     }
 }
 
-impl Menu for FeedMenu {
+impl MenuItem for FeedMenu {
     fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
         self.run_feed(t, r)
     }
 
-    fn label(&self) -> &'static str {
-        "Feed (IPM)"
+    fn is_active_by_default(&self, _t: &mut Threshold, r: &mut idle::Resources) -> bool {
+        IS_LATHE.read(r.FLASH) != 0
+    }
+}
+
+impl fmt::Display for FeedMenu {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("Feed (IPM)")
     }
 }
 

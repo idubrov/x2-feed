@@ -1,65 +1,42 @@
 use idle;
 use rtfm::Threshold;
-use core::result::Result;
-use config::Display;
-use hal::Button::Encoder;
-use hal::Event::Pressed;
+use core::fmt;
+use self::feed::FeedMenu;
+use settings;
 
-pub mod feed;
+#[macro_use]
+mod util;
+mod feed;
 
-#[derive(Debug)]
-pub struct Exit;
+use self::util::Back;
 
-pub type MenuResult = Result<(), Exit>;
-
-pub trait Menu {
-    fn label(&self) -> &'static str;
-    fn run(&mut self, _t: &mut Threshold, r: &mut idle::Resources) -> MenuResult;
+pub enum MenuResult {
+    Ok,
+    Exit
 }
 
-pub struct MainMenu {
-    feed: feed::FeedMenu
-}
+pub trait MenuItem: fmt::Display {
+    fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> MenuResult;
 
-impl MainMenu {
-    pub fn new() -> MainMenu {
-        MainMenu {
-            feed: feed::FeedMenu::new(),
-        }
+    fn is_active_by_default(&self, _t: &mut Threshold, _r: &mut idle::Resources) -> bool {
+        false
     }
 }
 
-impl Menu for MainMenu {
-    fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
-        run_menu(&mut [&mut self.feed], t, r)
-    }
+menu_setting!(IsLathe, "Is Lathe?", settings::IS_LATHE);
+menu_setting!(Reversed, "Is Reversed?", settings::IS_REVERSED);
+menu_setting!(Microsteps, "Microsteps", settings::MICROSTEPS);
+menu_setting!(Pitch, "Pitch", settings::PITCH);
 
-    fn label(&self) -> &'static str {
-        "Main"
-    }
-}
+menu!(SettingsMenu, "Settings", {
+    IsLathe,
+    Reversed,
+    Microsteps,
+    Pitch,
+    Back
+});
 
-// Generalized function to run a menu which consist of given slice of other menus.
-fn run_menu(items: &mut [&mut Menu], t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
-    let mut selected = 0usize;
-    loop {
-        r.ENCODER.set_current(selected as u16);
-        r.ENCODER.set_limit(items.len() as u16);
-
-        Display::new(r.SCREEN).clear();
-        loop {
-            selected = r.ENCODER.current() as usize;
-            let current: &mut Menu = items[selected];
-
-            if let Pressed(Encoder) = r.CONTROLS.read_event() {
-                Display::new(r.SCREEN).clear();
-                current.run(t, r)?;
-                break;
-            }
-
-            let mut lcd = Display::new(r.SCREEN);
-            lcd.position(0, 0);
-            lcd.print(current.label());
-        }
-    }
-}
+menu!(MainMenu, "Main", {
+    FeedMenu,
+    SettingsMenu
+});

@@ -48,13 +48,14 @@ pub struct StepperDriverImpl<Port: 'static> {
     step: usize,
     dir: usize,
     enable: usize,
-    reset: usize
+    reset: usize,
+    reversed: bool
 }
 unsafe impl <Port> Send for StepperDriverImpl<Port> { }
 
 impl <Port> StepperDriverImpl<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
     pub const fn new(port: Peripheral<Port>, step: usize, dir: usize, enable: usize, reset: usize) -> StepperDriverImpl<Port> {
-        StepperDriverImpl { port, step, dir, enable, reset }
+        StepperDriverImpl { port, step, dir, enable, reset, reversed: false }
     }
 
     // Note that we require an explicit ownership of I/O port peripheral to guard against
@@ -113,6 +114,10 @@ impl <Port> StepperDriverImpl<Port> where Port: Deref<Target = gpioa::RegisterBl
 
         // Enable the driver
         port.write_pin(self.reset, true);
+    }
+
+    pub fn set_reversed(&mut self, reversed: bool) {
+        self.reversed = reversed;
     }
 
     /// Completely owned by `Driver`
