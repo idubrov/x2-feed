@@ -22,6 +22,7 @@ pub enum Error {
 
 pub struct Stepper {
     stepgen: stepgen::Stepgen,
+    reversed: bool,
 
     base_step: u32,
     position: i32,
@@ -39,10 +40,16 @@ impl Stepper {
     pub const fn new(freq: u32) -> Stepper {
         Stepper {
             stepgen: stepgen::Stepgen::new(freq),
+            reversed: false,
             base_step: 0,
             position: 0,
             state: State::Stopped,
         }
+    }
+
+    /// Set reversed flag
+    pub fn set_reversed(&mut self, reversed: bool) {
+        self.reversed = reversed;
     }
 
     /// Set new acceleration (steps per second per second), in 24.8 format.
@@ -77,7 +84,7 @@ impl Stepper {
                 self.state = State::Stopping(dir)
             },
             State::Stopping(dir) if !driver.is_running() => {
-                driver.enable(false);
+                driver.set_enable(false);
                 self.state = State::Stopped;
 
                 // Update internal position counter. We do it at the end to reduce amount of work
@@ -125,8 +132,8 @@ impl Stepper {
         self.stepgen.set_target_step(self.base_step + (delta.abs() as u32));
 
         // Set direction and enable driver outputs
-        driver.direction(dir);
-        driver.enable(true);
+        driver.set_direction(dir != self.reversed);
+        driver.set_enable(true);
 
         // Start pulse generation
         let delay = self.stepgen.next().unwrap();

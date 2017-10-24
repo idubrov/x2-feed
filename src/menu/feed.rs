@@ -11,22 +11,16 @@ use estop;
 use super::{MenuItem, MenuResult};
 use core::fmt::Write;
 use cortex_m;
-use settings::IS_LATHE;
+use settings;
 
-// FIXME: move to EEPROM?
-const PITCH: u32 = 16; // 12 for lathe
-const MICROSTEPS: u32 = 16;
-const MAX_IPM: u16 = 30;
-const ACCELERATION: u32 = 1200; // Steps per second per second
 const STEPS_PER_ROTATION: u32 = 200;
-
 
 pub struct FeedMenu {
     speed: u32,
     slow_ipm: u16,
     fast_ipm: u16,
     ipm: u16,
-    rpm: u32
+    rpm: u32,
 }
 
 impl FeedMenu {
@@ -60,7 +54,7 @@ impl FeedMenu {
         write!(lcd, "{}{: >3} IPM", c, u32::from(self.ipm)).unwrap();
     }
 
-    fn handle_feed_rate(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources) {
+    fn handle_feed_rate(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources, steps_per_inch: u32) {
         let mut ipm = r.ENCODER.current() + 1; // Encoder is off by one (as it starts from 0)
         match event {
             Pressed(Fast) => {
@@ -80,7 +74,7 @@ impl FeedMenu {
 
         // Update stepper speed based on current setting
         // Shift by 8 to convert to 24.8 format
-        let speed = (u32::from(ipm << 8) * PITCH * STEPS_PER_ROTATION * MICROSTEPS) / 60;
+        let speed = (u32::from(ipm << 8) * steps_per_inch) / 60;
         if self.speed != speed {
             r.STEPPER.claim_mut(t, |s, _t| s.set_speed(speed)).unwrap();
             self.speed = speed;
@@ -121,27 +115,29 @@ impl FeedMenu {
     }
 
     fn run_feed(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
-        Display::new(r.SCREEN).clear();
+        reload_stepper_settings(t, r);
 
-        let acceleration = (ACCELERATION * MICROSTEPS) << 8;
-        r.STEPPER.claim_mut(t, |s, _t|
-            s.set_acceleration(acceleration)).unwrap();
+        // Pre-compute steps-per-inch
+        let steps_per_inch = u32::from(settings::PITCH.read(r.FLASH)) *
+            u32::from(settings::MICROSTEPS.read(r.FLASH)) *
+            STEPS_PER_ROTATION;
 
         r.ENCODER.set_current(self.slow_ipm - 1);
-        r.ENCODER.set_limit(MAX_IPM);
+        r.ENCODER.set_limit(settings::MAX_IPM.read(r.FLASH));
 
+        Display::new(r.SCREEN).clear();
         loop {
             estop::check(&mut Display::new(r.SCREEN));
 
             let event = r.CONTROLS.read_event();
-            self.handle_feed_rate(event, t, r);
+            self.handle_feed_rate(event, t, r, steps_per_inch);
             self.handle_feed(event, t, r);
             self.handle_rpm(t, r);
             self.update_screen(t, r);
 
             if let Pressed(Encoder) = event {
                 self.stop_and_wait(t, r);
-                return MenuResult::Ok
+                return MenuResult::Ok;
             }
         }
     }
@@ -176,7 +172,7 @@ impl MenuItem for FeedMenu {
     }
 
     fn is_active_by_default(&self, _t: &mut Threshold, r: &mut idle::Resources) -> bool {
-        IS_LATHE.read(r.FLASH) != 0
+        settings::IS_LATHE.read(r.FLASH) != 0
     }
 }
 
@@ -195,4 +191,16 @@ fn move_to(t: &mut Threshold, r: &mut idle::Resources, target: i32) {
             stepper.move_to(driver, target).unwrap()
         })
     })
+}
+
+// Reload stepper settings from EEPROM
+fn reload_stepper_settings(t: &mut Threshold, r: &mut idle::Resources) {
+    let reversed = settings::IS_REVERSED.read(r.FLASH) != 0;
+    let acceleration = u32::from(settings::ACCELERATION.read(r.FLASH)) *
+        u32::from(settings::MICROSTEPS.read(r.FLASH)) << 8;
+
+    r.STEPPER.claim_mut(t, |s, _t| {
+        s.set_reversed(reversed);
+        s.set_acceleration(acceleration).unwrap();
+    });
 }

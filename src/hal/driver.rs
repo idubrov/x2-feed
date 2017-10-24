@@ -10,10 +10,10 @@ pub trait StepperDriver {
     // Control aspect of stepper motor driver (setting directions, enabling/disabling outputs).
 
     /// Enable/disable driver outputs.
-    fn enable(&mut self, enable: bool);
+    fn set_enable(&mut self, enable: bool);
 
     /// Set stepper driver direction.
-    fn direction(&mut self, bit: bool);
+    fn set_direction(&mut self, bit: bool);
 
     // Pulse generating aspect of stepper motor driver.
 
@@ -49,13 +49,12 @@ pub struct StepperDriverImpl<Port: 'static> {
     dir: usize,
     enable: usize,
     reset: usize,
-    reversed: bool
 }
 unsafe impl <Port> Send for StepperDriverImpl<Port> { }
 
 impl <Port> StepperDriverImpl<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
     pub const fn new(port: Peripheral<Port>, step: usize, dir: usize, enable: usize, reset: usize) -> StepperDriverImpl<Port> {
-        StepperDriverImpl { port, step, dir, enable, reset, reversed: false }
+        StepperDriverImpl { port, step, dir, enable, reset }
     }
 
     // Note that we require an explicit ownership of I/O port peripheral to guard against
@@ -116,10 +115,6 @@ impl <Port> StepperDriverImpl<Port> where Port: Deref<Target = gpioa::RegisterBl
         port.write_pin(self.reset, true);
     }
 
-    pub fn set_reversed(&mut self, reversed: bool) {
-        self.reversed = reversed;
-    }
-
     /// Completely owned by `Driver`
     fn unsafe_timer(&self) -> &'static TIM1 {
         unsafe { &*TIM1.get() }
@@ -133,13 +128,12 @@ impl <Port> StepperDriverImpl<Port> where Port: Deref<Target = gpioa::RegisterBl
 
 impl <Port> StepperDriver for StepperDriverImpl<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
     // Controls
-    fn enable(&mut self, enable: bool) {
+    fn set_enable(&mut self, enable: bool) {
         self.port().write_pin(self.enable, enable);
     }
 
-    fn direction(&mut self, dir: bool) {
-        // Note: reversed
-        self.port().write_pin(self.dir, !dir);
+    fn set_direction(&mut self, dir: bool) {
+        self.port().write_pin(self.dir, dir);
     }
 
     // Pulse generation

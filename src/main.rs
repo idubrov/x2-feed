@@ -34,7 +34,7 @@ extern crate eeprom;
 use stm32f103xx::{GPIOA, GPIOB};
 use hal::*;
 use config::*;
-use rtfm::{app, Threshold, Resource};
+use rtfm::{app, Threshold};
 use hal::{clock, delay};
 use eeprom::EEPROM;
 use menu::{MenuItem, MainMenu};
@@ -153,9 +153,6 @@ fn init_screen(r: &init::Resources) {
 
 
 fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
-    let reversed = settings::IS_REVERSED.read(r.FLASH) != 0;
-    r.DRIVER.claim_mut(t, |d, _t| d.set_reversed(reversed));
-
     let mut menu = MainMenu::new();
     loop {
         menu.run(t, &mut r);
