@@ -30,15 +30,15 @@ menu_setting!(Pitch, "Pitch", settings::PITCH);
 menu_setting!(MaxIPM, "MaxIPM", settings::MAX_IPM);
 
 menu!(SettingsMenu, "Settings", {
-    IsLathe,
-    Reversed,
-    Microsteps,
-    Pitch,
-    MaxIPM,
-    Back
+    IsLathe(),
+    Reversed(),
+    Microsteps(),
+    Pitch(),
+    MaxIPM(),
+    Back()
 });
 
 menu!(MainMenu, "Main", {
-    FeedMenu,
-    SettingsMenu
+    FeedMenu(false),
+    SettingsMenu()
 });

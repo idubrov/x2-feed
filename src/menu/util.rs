@@ -65,7 +65,7 @@ pub fn run_setting(setting: &settings::Setting, label: &'static str, r: &mut idl
 }
 
 macro_rules! menu {
-    ($name:ident, $label: expr, { $( $item:ident ),* }) => {
+    ($name:ident, $label: expr, { $( $item:ident ( $($params:expr),* ) ),* }) => {
         #[allow(non_snake_case)]
         pub struct $name {
             $($item: $item),*
@@ -74,7 +74,7 @@ macro_rules! menu {
         impl $name {
             pub fn new() -> Self {
                 Self {
-                    $( $item: $item::new() ),*
+                    $( $item: $item::new( $($params),* ) ),*
                 }
             }
         }

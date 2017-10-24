@@ -15,26 +15,70 @@ use settings;
 
 const STEPS_PER_ROTATION: u32 = 200;
 
+#[derive(Copy, Clone)]
+pub enum FeedRate {
+    IPM(u16),
+    IPR(u16)
+}
+
+impl FeedRate {
+    fn with_rate(&self, rate: u16) -> Self {
+        match *self {
+            FeedRate::IPM(_ipm) => FeedRate::IPM(rate),
+            FeedRate::IPR(_ipr) => FeedRate::IPR(rate)
+        }
+    }
+
+    fn rate(&self) -> u16 {
+        match *self {
+            FeedRate::IPM(rate) => rate,
+            FeedRate::IPR(rate) => rate
+        }
+    }
+
+    fn to_speed(&self, steps_per_inch: u32, rpm: u32) -> u32 {
+        // Update stepper speed based on current setting
+        // Shift by 8 to convert to 24.8 format
+        match *self {
+            FeedRate::IPM(ipm) => (u32::from(ipm) * steps_per_inch << 8) / 60,
+            FeedRate::IPR(ipr) => {
+                // IPR are in thou, so additionally divide by 1_000
+                // Also, RPM is already in 24.8 format, so no need to shift
+                u32::from(ipr) * rpm * steps_per_inch / 60_000
+            },
+        }
+    }
+}
+
+impl fmt::Display for FeedRate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            FeedRate::IPM(ipm) => write!(f, "{: >3} IPM", ipm),
+            FeedRate::IPR(ipr) => write!(f, "0.{:0>3} IPR", ipr)
+        }
+    }
+}
+
 pub struct FeedMenu {
     speed: u32,
-    slow_ipm: u16,
-    fast_ipm: u16,
-    ipm: u16,
+    slow_feed: FeedRate,
+    fast_feed: FeedRate,
+    fast: bool,
     rpm: u32,
 }
 
 impl FeedMenu {
-    pub fn new() -> FeedMenu {
+    pub fn new(ipr: bool) -> FeedMenu {
         FeedMenu {
             speed: 0,
-            slow_ipm: 10,
-            fast_ipm: 30,
+            slow_feed: if ipr { FeedRate::IPR(4) } else { FeedRate::IPM(10) },
+            fast_feed: FeedRate::IPM(30),
+            fast: false,
             rpm: 0,
-            ipm: 0,
         }
     }
 
-    fn update_screen(&self, t: &mut Threshold, r: &mut idle::Resources) {
+    fn update_screen(&self, t: &mut Threshold, r: &mut idle::Resources, feed: FeedRate) {
         let run_state = r.STEPPER.claim(t, |s, _t| s.state());
         let is_fast = r.CONTROLS.state().fast;
 
@@ -51,38 +95,40 @@ impl FeedMenu {
             (stepper::State::Running(true), true) => font::FAST_RIGHT,
             _ => ' '
         };
-        write!(lcd, "{}{: >3} IPM", c, u32::from(self.ipm)).unwrap();
+        write!(lcd, "{}{}", c, feed).unwrap();
     }
 
-    fn handle_feed_rate(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources, steps_per_inch: u32) {
-        let mut ipm = r.ENCODER.current() + 1; // Encoder is off by one (as it starts from 0)
+    fn handle_feed_rate(&mut self, event: Event, r: &mut idle::Resources) -> FeedRate {
+        // Encoder is off by one (as it starts from 0)
+        let proto = if self.fast { self.fast_feed } else { self.slow_feed };
+        let mut feed = proto.with_rate(r.ENCODER.current() + 1);
         match event {
             Pressed(Fast) => {
                 // Switch to fast IPM
-                self.slow_ipm = ipm;
-                ipm = self.fast_ipm;
-                r.ENCODER.set_current(ipm - 1);
+                self.slow_feed = feed;
+                feed = self.fast_feed;
+                r.ENCODER.set_current(feed.rate() - 1);
             }
             Unpressed(Fast) => {
                 // Switch to slow IPM
-                self.fast_ipm = ipm;
-                ipm = self.slow_ipm;
-                r.ENCODER.set_current(ipm - 1);
+                self.fast_feed = feed;
+                feed = self.slow_feed;
+                r.ENCODER.set_current(feed.rate() - 1);
             }
             _ => {}
         }
 
-        // Update stepper speed based on current setting
-        // Shift by 8 to convert to 24.8 format
-        let speed = (u32::from(ipm << 8) * steps_per_inch) / 60;
+        feed
+    }
+
+    fn update_speed(&mut self, t: &mut Threshold, r: &mut idle::Resources, speed: u32) {
         if self.speed != speed {
             r.STEPPER.claim_mut(t, |s, _t| s.set_speed(speed)).unwrap();
             self.speed = speed;
         }
-        self.ipm = ipm
     }
 
-    fn handle_feed(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources) {
+    fn update_movement(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources) {
         let run_state = r.STEPPER.claim(t, |s, _t| s.state());
         match (run_state, event) {
             (stepper::State::Stopped, Pressed(Left)) => {
@@ -103,11 +149,7 @@ impl FeedMenu {
         }
     }
 
-    fn handle_rpm(&mut self, t: &mut Threshold, r: &idle::Resources) {
-        use rtfm::Resource;
-
-        let rpm = r.HALL.claim(t, |hall, _t| hall.rpm());
-
+    fn update_rpm(&mut self, rpm: u32) {
         // Only capture if difference is big enough (more than .5%)
         if self.rpm == 0 || rpm * 200 > self.rpm * 201 || rpm * 200 < self.rpm * 199 {
             self.rpm = rpm;
@@ -122,7 +164,7 @@ impl FeedMenu {
             u32::from(settings::MICROSTEPS.read(r.FLASH)) *
             STEPS_PER_ROTATION;
 
-        r.ENCODER.set_current(self.slow_ipm - 1);
+        r.ENCODER.set_current(self.slow_feed.rate() - 1);
         r.ENCODER.set_limit(settings::MAX_IPM.read(r.FLASH));
 
         Display::new(r.SCREEN).clear();
@@ -130,10 +172,13 @@ impl FeedMenu {
             estop::check(&mut Display::new(r.SCREEN));
 
             let event = r.CONTROLS.read_event();
-            self.handle_feed_rate(event, t, r, steps_per_inch);
-            self.handle_feed(event, t, r);
-            self.handle_rpm(t, r);
-            self.update_screen(t, r);
+            let rpm = r.HALL.claim(t, |hall, _t| hall.rpm());
+
+            let feed = self.handle_feed_rate(event, r);
+            self.update_speed(t, r, feed.to_speed(steps_per_inch, rpm));
+            self.update_movement(event, t, r);
+            self.update_rpm(rpm);
+            self.update_screen(t, r, feed);
 
             if let Pressed(Encoder) = event {
                 self.stop_and_wait(t, r);
@@ -172,7 +217,11 @@ impl MenuItem for FeedMenu {
     }
 
     fn is_active_by_default(&self, _t: &mut Threshold, r: &mut idle::Resources) -> bool {
-        settings::IS_LATHE.read(r.FLASH) != 0
+        let lathe = settings::IS_LATHE.read(r.FLASH) != 0;
+        match self.slow_feed {
+            FeedRate::IPR(_) => lathe,
+            FeedRate::IPM(_) => !lathe
+        }
     }
 }
 
