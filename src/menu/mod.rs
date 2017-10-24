@@ -28,6 +28,7 @@ menu_setting!(Reversed, "Is Reversed?", settings::IS_REVERSED);
 menu_setting!(Microsteps, "Microsteps", settings::MICROSTEPS);
 menu_setting!(Pitch, "Pitch", settings::PITCH);
 menu_setting!(MaxIPM, "MaxIPM", settings::MAX_IPM);
+menu_setting!(Acceleration, "Acceleration", settings::ACCELERATION);
 
 menu!(SettingsMenu, "Settings", {
     IsLathe(),
@@ -35,6 +36,7 @@ menu!(SettingsMenu, "Settings", {
     Microsteps(),
     Pitch(),
     MaxIPM(),
+    Acceleration(),
     Back()
 });
 
