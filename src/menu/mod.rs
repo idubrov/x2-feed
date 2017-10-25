@@ -8,15 +8,8 @@ use settings;
 mod util;
 mod feed;
 
-use self::util::Back;
-
-pub enum MenuResult {
-    Ok,
-    Exit
-}
-
 pub trait MenuItem: fmt::Display {
-    fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> MenuResult;
+    fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources);
 
     fn is_active_by_default(&self, _t: &mut Threshold, _r: &mut idle::Resources) -> bool {
         false
@@ -36,8 +29,7 @@ menu!(SettingsMenu, "Settings", {
     Microsteps(),
     Pitch(),
     MaxIPM(),
-    Acceleration(),
-    Back()
+    Acceleration()
 });
 
 menu!(MainMenu, "Main", {

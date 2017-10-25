@@ -6,7 +6,7 @@ use font;
 use rtfm::{Resource, Threshold};
 use stepper;
 use estop;
-use menu::{MenuItem, MenuResult};
+use menu::MenuItem;
 use core::fmt::Write;
 use cortex_m;
 use settings;
@@ -78,7 +78,7 @@ impl FeedMenu {
             fast_feed: FeedRate::IPM(30),
             fast: false,
             rpm: 0,
-            exit: Exit::new(1000)
+            exit: Exit::new()
         }
     }
 
@@ -167,7 +167,7 @@ impl FeedMenu {
         }
     }
 
-    fn run_feed(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
+    fn run_feed(&mut self, t: &mut Threshold, r: &mut idle::Resources) {
         reload_stepper_settings(t, r);
 
         // Pre-compute steps-per-inch
@@ -192,10 +192,11 @@ impl FeedMenu {
             self.update_screen(t, r, feed);
 
             if self.exit.should_exit(event) {
-                self.stop_and_wait(t, r);
-                return MenuResult::Ok;
+                break;
             }
         }
+
+        self.stop_and_wait(t, r);
     }
 
     fn stop_and_wait(&self, t: &mut Threshold, r: &mut idle::Resources) {
@@ -223,7 +224,7 @@ impl FeedMenu {
 }
 
 impl MenuItem for FeedMenu {
-    fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
+    fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources) {
         self.run_feed(t, r)
     }
 

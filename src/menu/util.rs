@@ -2,19 +2,18 @@ use idle;
 use rtfm::Threshold;
 use core::fmt::Write;
 use config::Display;
-use ::menu::{MenuItem, MenuResult};
+use ::menu::MenuItem;
 use hal::{Event, Button, delay};
 use settings;
-use core::fmt;
 
-pub fn run_menu(items: &mut [&mut MenuItem], t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
+pub fn run_menu(items: &mut [&mut MenuItem], t: &mut Threshold, r: &mut idle::Resources) {
     if let Some(def) = items.iter().position(|item| item.is_active_by_default(t, r)) {
-        if let MenuResult::Exit = items[def].run(t, r) {
-            return MenuResult::Ok
-        }
+        items[def].run(t, r);
     }
 
     let mut selected = 0usize;
+    let mut exit: Exit = Exit::new();
+
     loop {
         r.ENCODER.set_current(selected as u16);
         r.ENCODER.set_limit(items.len() as u16);
@@ -24,21 +23,24 @@ pub fn run_menu(items: &mut [&mut MenuItem], t: &mut Threshold, r: &mut idle::Re
             selected = r.ENCODER.current() as usize;
             let current: &mut MenuItem = items[selected];
 
-            if let Event::Pressed(Button::Encoder) = r.CONTROLS.read_event() {
-                if let MenuResult::Exit = current.run(t, r) {
-                    return MenuResult::Ok
-                }
+            let event = r.CONTROLS.read_event();
+            if let Event::Unpressed(Button::Encoder) = event {
+                current.run(t, r);
                 break;
             }
 
             let mut lcd = Display::new(r.SCREEN);
             lcd.position(0, 0);
             write!(&mut lcd, "{}", current).unwrap();
+
+            if exit.should_exit(event) {
+                return;
+            }
         }
     }
 }
 
-pub fn run_setting(setting: &settings::Setting, label: &'static str, r: &mut idle::Resources) -> MenuResult {
+pub fn run_setting(setting: &settings::Setting, label: &'static str, r: &mut idle::Resources) {
     let mut lcd = Display::new(r.SCREEN);
     lcd.clear();
 
@@ -61,7 +63,6 @@ pub fn run_setting(setting: &settings::Setting, label: &'static str, r: &mut idl
     if current != orig {
         setting.write(r.FLASH, current).unwrap();
     }
-    MenuResult::Ok
 }
 
 macro_rules! menu {
@@ -80,7 +81,7 @@ macro_rules! menu {
         }
 
         impl MenuItem for $name {
-            fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
+            fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources) {
                 ::menu::util::run_menu(&mut [ $( &mut self.$item ),* ], t, r)
             }
         }
@@ -105,7 +106,7 @@ macro_rules! menu_setting {
         }
 
         impl MenuItem for $name {
-            fn run(&mut self, _t: &mut Threshold, r: &mut idle::Resources) -> MenuResult {
+            fn run(&mut self, _t: &mut Threshold, r: &mut idle::Resources) {
                 ::menu::util::run_setting(&$setting, $label, r)
             }
         }
@@ -118,40 +119,21 @@ macro_rules! menu_setting {
     }
 }
 
-pub struct Back;
-impl Back {
-    pub fn new() -> Back {
-        Back
-    }
-}
-
-impl MenuItem for Back {
-    fn run(&mut self, _t: &mut Threshold, _r: &mut idle::Resources) -> MenuResult {
-        MenuResult::Exit
-    }
-}
-
-impl fmt::Display for Back {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("Exit")
-    }
-}
+const EXIT_DURATION_US: u32 = 1_000_000;
 
 pub struct Exit {
-    duration_us: u32,
     pressed_at: Option<u32>
 }
 
 impl Exit {
-    pub fn new(duration_ms: u32) -> Self {
+    pub fn new() -> Self {
         Self {
-            duration_us: duration_ms * 1000,
             pressed_at: None
         }
     }
     pub fn should_exit(&mut self, event: Event) -> bool {
         if let Some(pressed_at) = self.pressed_at {
-            if delay::duration_us(pressed_at) >= self.duration_us {
+            if delay::duration_us(pressed_at) >= EXIT_DURATION_US {
                 return true;
             }
         }
