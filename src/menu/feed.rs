@@ -10,6 +10,7 @@ use menu::{MenuItem, MenuResult};
 use core::fmt::Write;
 use cortex_m;
 use settings;
+use stepgen;
 
 const STEPS_PER_ROTATION: u32 = 200;
 
@@ -42,7 +43,8 @@ impl FeedRate {
             FeedRate::IPR(ipr) => {
                 // IPR are in thou, so additionally divide by 1_000
                 // Also, RPM is already in 24.8 format, so no need to shift
-                u32::from(ipr) * rpm * steps_per_inch / 60_000
+                // FIXME: wrapping?
+                (u64::from(ipr) * u64::from(rpm) * u64::from(steps_per_inch) / 60_000) as u32
             },
         }
     }
@@ -59,6 +61,7 @@ impl fmt::Display for FeedRate {
 
 pub struct FeedMenu {
     speed: u32,
+    speed_err: Option<stepgen::Error>,
     slow_feed: FeedRate,
     fast_feed: FeedRate,
     fast: bool,
@@ -69,6 +72,7 @@ impl FeedMenu {
     pub fn new(ipr: bool) -> FeedMenu {
         FeedMenu {
             speed: 0,
+            speed_err: None,
             slow_feed: if ipr { FeedRate::IPR(4) } else { FeedRate::IPM(10) },
             fast_feed: FeedRate::IPM(30),
             fast: false,
@@ -94,6 +98,11 @@ impl FeedMenu {
             _ => ' '
         };
         write!(lcd, "{}{}", c, feed).unwrap();
+        match self.speed_err {
+            Some(stepgen::Error::TooSlow) => write!(lcd, " Slow!").unwrap(),
+            Some(stepgen::Error::TooFast) => write!(lcd, " Fast!").unwrap(),
+            _ => write!(lcd, "      ").unwrap()
+        };
     }
 
     fn handle_feed_rate(&mut self, event: Event, r: &mut idle::Resources) -> FeedRate {
@@ -123,8 +132,8 @@ impl FeedMenu {
 
     fn update_speed(&mut self, t: &mut Threshold, r: &mut idle::Resources, speed: u32) {
         if self.speed != speed {
-            r.STEPPER.claim_mut(t, |s, _t| s.set_speed(speed)).unwrap();
             self.speed = speed;
+            self.speed_err = r.STEPPER.claim_mut(t, |s, _t| s.set_speed(speed)).err();
         }
     }
 
