@@ -21,3 +21,16 @@ pub fn ms(delay: u32) {
         us(1000);
     }
 }
+
+/// Current tick in 1/9th of microsecond (SYST frequency is 9Mhz)
+pub fn current() -> u32 {
+    let syst = unsafe { &*SYST.get() };
+    syst.get_current()
+}
+
+/// Duration between current tick and given start tick in microseconds
+/// Note that SYST overflows every ~1.8 second, so duration longer than
+/// that could not be measured.
+pub fn duration_us(start: u32) -> u32 {
+    start.wrapping_sub(current()) / 9
+}

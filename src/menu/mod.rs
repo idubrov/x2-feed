@@ -41,6 +41,6 @@ menu!(SettingsMenu, "Settings", {
 });
 
 menu!(MainMenu, "Main", {
-    FeedMenu(false),
+    FeedMenu(true),
     SettingsMenu()
 });

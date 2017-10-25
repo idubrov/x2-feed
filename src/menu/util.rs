@@ -3,7 +3,7 @@ use rtfm::Threshold;
 use core::fmt::Write;
 use config::Display;
 use ::menu::{MenuItem, MenuResult};
-use hal::{Event, Button};
+use hal::{Event, Button, delay};
 use settings;
 use core::fmt;
 
@@ -134,5 +134,32 @@ impl MenuItem for Back {
 impl fmt::Display for Back {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("Exit")
+    }
+}
+
+pub struct Exit {
+    duration_us: u32,
+    pressed_at: Option<u32>
+}
+
+impl Exit {
+    pub fn new(duration_ms: u32) -> Self {
+        Self {
+            duration_us: duration_ms * 1000,
+            pressed_at: None
+        }
+    }
+    pub fn should_exit(&mut self, event: Event) -> bool {
+        if let Some(pressed_at) = self.pressed_at {
+            if delay::duration_us(pressed_at) >= self.duration_us {
+                return true;
+            }
+        }
+        match event {
+            Event::Pressed(Button::Encoder) => self.pressed_at = Some(delay::current()),
+            Event::Unpressed(Button::Encoder) => self.pressed_at = None,
+            _ => {}
+        }
+        false
     }
 }

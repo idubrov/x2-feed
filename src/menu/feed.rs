@@ -11,6 +11,7 @@ use core::fmt::Write;
 use cortex_m;
 use settings;
 use stepgen;
+use menu::util::Exit;
 
 const STEPS_PER_ROTATION: u32 = 200;
 
@@ -66,6 +67,7 @@ pub struct FeedMenu {
     fast_feed: FeedRate,
     fast: bool,
     rpm: u32,
+    exit: Exit
 }
 
 impl FeedMenu {
@@ -77,6 +79,7 @@ impl FeedMenu {
             fast_feed: FeedRate::IPM(30),
             fast: false,
             rpm: 0,
+            exit: Exit::new(1000)
         }
     }
 
@@ -189,7 +192,7 @@ impl FeedMenu {
             self.update_rpm(rpm);
             self.update_screen(t, r, feed);
 
-            if let Event::Pressed(Button::Encoder) = event {
+            if self.exit.should_exit(event) {
                 self.stop_and_wait(t, r);
                 return MenuResult::Ok;
             }

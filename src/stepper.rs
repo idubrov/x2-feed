@@ -17,7 +17,16 @@ pub enum State {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Error {
     /// Stepper is not stopped to run given command
-    NotStopped
+    NotStopped,
+
+    /// Stepgen error
+    StepgenError(stepgen::Error),
+}
+
+impl From<stepgen::Error> for Error {
+    fn from(err: stepgen::Error) -> Self {
+        Error::StepgenError(err)
+    }
 }
 
 pub struct Stepper {
@@ -80,7 +89,7 @@ impl Stepper {
         match self.state {
             State::StopRequested(dir) => {
                 // Initiate stopping sequence -- set target step to 0
-                self.stepgen.set_target_step(0);
+                self.stepgen.set_target_step(0).unwrap();
                 self.state = State::Stopping(dir)
             },
             State::Stopping(dir) if !driver.is_running() => {
@@ -129,7 +138,7 @@ impl Stepper {
         let dir = delta > 0;
 
         self.state = State::Running(dir);
-        self.stepgen.set_target_step(self.base_step + (delta.abs() as u32));
+        self.stepgen.set_target_step(self.base_step + (delta.abs() as u32))?;
 
         // Set direction and enable driver outputs
         driver.set_direction(dir != self.reversed);

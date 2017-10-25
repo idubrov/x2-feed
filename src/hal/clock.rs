@@ -57,7 +57,6 @@ pub fn setup(rcc: &RCC, syst: &SYST, flash: &FLASH) {
         panic!("SYSCLK failed to switch to PLL");
     }
 
-    // Setup SysTick to run at 1ms
-    // SysTick is 1/8 AHB (9Mhz)
+    // Use the whole SYST range
     syst.set_reload(0x00ff_ffff);
 }
