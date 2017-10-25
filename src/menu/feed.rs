@@ -40,7 +40,7 @@ impl FeedRate {
         // Update stepper speed based on current setting
         // Shift by 8 to convert to 24.8 format
         match *self {
-            FeedRate::IPM(ipm) => (u32::from(ipm) * steps_per_inch << 8) / 60,
+            FeedRate::IPM(ipm) => ((u32::from(ipm) * steps_per_inch) << 8) / 60,
             FeedRate::IPR(ipr) => {
                 // IPR are in thou, so additionally divide by 1_000
                 // Also, RPM is already in 24.8 format, so no need to shift
@@ -257,8 +257,8 @@ fn move_to(t: &mut Threshold, r: &mut idle::Resources, target: i32) {
 // Reload stepper settings from EEPROM
 fn reload_stepper_settings(t: &mut Threshold, r: &mut idle::Resources) {
     let reversed = settings::IS_REVERSED.read(r.FLASH) != 0;
-    let acceleration = u32::from(settings::ACCELERATION.read(r.FLASH)) *
-        u32::from(settings::MICROSTEPS.read(r.FLASH)) << 8;
+    let acceleration = (u32::from(settings::ACCELERATION.read(r.FLASH)) *
+        u32::from(settings::MICROSTEPS.read(r.FLASH))) << 8;
 
     r.STEPPER.claim_mut(t, |s, _t| {
         s.set_reversed(reversed);
