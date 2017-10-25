@@ -4,13 +4,14 @@ use config::{Display, StepperDriverResource};
 use core::fmt;
 use font;
 use rtfm::{Resource, Threshold};
-use stepper;
 use estop;
 use menu::MenuItem;
 use core::fmt::Write;
 use cortex_m;
 use settings;
-use stepgen;
+use stepgen::Error as StepgenError;
+use stepper::Error as StepperError;
+use stepper::State as StepperState;
 use menu::util::Exit;
 
 const STEPS_PER_ROTATION: u32 = 200;
@@ -61,11 +62,12 @@ impl fmt::Display for FeedRate {
 
 pub struct FeedMenu {
     speed: u32,
-    speed_err: Option<stepgen::Error>,
+    error: Option<StepperError>,
     slow_feed: FeedRate,
     fast_feed: FeedRate,
     fast: bool,
     rpm: u32,
+    limits: (Option<i32>, Option<i32>),
     exit: Exit
 }
 
@@ -73,12 +75,13 @@ impl FeedMenu {
     pub fn new(ipr: bool) -> FeedMenu {
         FeedMenu {
             speed: 0,
-            speed_err: None,
+            error: None,
             slow_feed: if ipr { FeedRate::IPR(4) } else { FeedRate::IPM(10) },
             fast_feed: FeedRate::IPM(30),
             fast: false,
             rpm: 0,
-            exit: Exit::new()
+            exit: Exit::new(),
+            limits: (None, None)
         }
     }
 
@@ -89,20 +92,23 @@ impl FeedMenu {
         let mut lcd = Display::new(r.SCREEN);
         lcd.position(0, 0);
         let rrpm = (self.rpm + 128) >> 8;
-        write!(lcd, "{: >4} RPM", rrpm).unwrap();
+
+        let llim = if self.limits.0.is_some() { " L" } else { "  " };
+        let rlim = if self.limits.1.is_some() { " R" } else { "  " };
+        write!(lcd, "{: >4} RPM{}{}", rrpm, llim, rlim).unwrap();
 
         lcd.position(0, 1);
         let c = match (run_state, is_fast) {
-            (stepper::State::Running(false), false) => font::LEFT,
-            (stepper::State::Running(true), false) => font::RIGHT,
-            (stepper::State::Running(false), true) => font::FAST_LEFT,
-            (stepper::State::Running(true), true) => font::FAST_RIGHT,
+            (StepperState::Running(false), false) => font::LEFT,
+            (StepperState::Running(true), false) => font::RIGHT,
+            (StepperState::Running(false), true) => font::FAST_LEFT,
+            (StepperState::Running(true), true) => font::FAST_RIGHT,
             _ => ' '
         };
         write!(lcd, "{}{}", c, feed).unwrap();
-        match self.speed_err {
-            Some(stepgen::Error::TooSlow) => write!(lcd, " Slow!").unwrap(),
-            Some(stepgen::Error::TooFast) => write!(lcd, " Fast!").unwrap(),
+        match self.error {
+            Some(StepperError::StepgenError(StepgenError::TooSlow)) => write!(lcd, " Slow!").unwrap(),
+            Some(StepperError::StepgenError(StepgenError::TooFast)) => write!(lcd, " Fast!").unwrap(),
             _ => write!(lcd, "      ").unwrap()
         };
     }
@@ -135,25 +141,26 @@ impl FeedMenu {
     fn update_speed(&mut self, t: &mut Threshold, r: &mut idle::Resources, speed: u32) {
         if self.speed != speed {
             self.speed = speed;
-            self.speed_err = r.STEPPER.claim_mut(t, |s, _t| s.set_speed(speed)).err();
+            self.error = r.STEPPER.claim_mut(t, |s, _t| s.set_speed(speed)).err();
         }
     }
 
     fn update_movement(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources) {
         let run_state = r.STEPPER.claim(t, |s, _t| s.state());
         match (run_state, event) {
-            (stepper::State::Stopped, Event::Pressed(Button::Left)) => {
+            (StepperState::Stopped, Event::Pressed(Button::Left)) => {
                 // Use very low number for moving left
-                move_to(t, r, -1_000_000_000);
+                // FIXME: explicit support for -+INF?
+                move_to(t, r, self.limits.0.unwrap_or(-1_000_000_000));
             }
 
-            (stepper::State::Stopped, Event::Pressed(Button::Right)) => {
+            (StepperState::Stopped, Event::Pressed(Button::Right)) => {
                 // Use very high number for moving right
-                move_to(t, r, 1_000_000_000);
+                move_to(t, r, self.limits.1.unwrap_or(1_000_000_000));
             }
 
-            (stepper::State::Running(false), Event::Unpressed(Button::Left)) |
-            (stepper::State::Running(true), Event::Unpressed(Button::Right)) =>
+            (StepperState::Running(false), Event::Unpressed(Button::Left)) |
+            (StepperState::Running(true), Event::Unpressed(Button::Right)) =>
                 r.STEPPER.claim_mut(t, |s, _t| s.stop()),
 
             _ => {}
@@ -211,7 +218,7 @@ impl FeedMenu {
         }
 
         while r.STEPPER.claim(t, |s, _t| {
-            if let stepper::State::Stopped = s.state() {
+            if let StepperState::Stopped = s.state() {
                 return false;
             }
             // Enter WFI while we block stepper interrupt (via claim above), to avoid race conditions.

@@ -1,6 +1,7 @@
 use stepgen;
 
 use hal::StepperDriver;
+use core;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum State {
@@ -22,6 +23,8 @@ pub enum Error {
     /// Stepgen error
     StepgenError(stepgen::Error),
 }
+
+type Result = core::result::Result<(), Error>;
 
 impl From<stepgen::Error> for Error {
     fn from(err: stepgen::Error) -> Self {
@@ -62,8 +65,8 @@ impl Stepper {
     }
 
     /// Set new acceleration (steps per second per second), in 24.8 format.
-    pub fn set_acceleration(&mut self, acceleration: u32) -> stepgen::Result {
-        self.stepgen.set_acceleration(acceleration)
+    pub fn set_acceleration(&mut self, acceleration: u32) -> Result {
+        Ok(self.stepgen.set_acceleration(acceleration)?)
     }
 
     /// Set slew speed (maximum speed stepper motor would run).
@@ -73,8 +76,8 @@ impl Stepper {
     /// enough time for deceleration.
     ///
     /// * `speed` - target slew speed to reach, in steps per second, 24.8 format
-    pub fn set_speed(&mut self, speed: u32) -> stepgen::Result {
-        self.stepgen.set_target_speed(speed)
+    pub fn set_speed(&mut self, speed: u32) -> Result {
+        Ok(self.stepgen.set_target_speed(speed)?)
     }
 
     /// Returns `false` no new delay was loaded
@@ -112,19 +115,25 @@ impl Stepper {
 
     // Incorporate outstanding steps from the stepgen into current position
     fn update_position(&mut self, dir: bool) {
+        let step_pos = self.calc_position(dir);
+        self.base_step = step_pos.0;
+        self.position = step_pos.1;
+    }
+
+    // Compute current position based on stepgen step + last position
+    fn calc_position(&self, dir: bool) -> (u32, i32) {
         let step = self.stepgen.current_step();
         let offset = (step - self.base_step) as i32;
-        self.base_step = step;
         if dir {
-            self.position += offset;
+            (step, self.position + offset)
         } else {
-            self.position -= offset;
+            (step, self.position - offset)
         }
     }
 
     /// Move to given position. Note that no new move commands will be accepted while stepper is
     /// running. However, other target parameter, target speed, could be changed any time.
-    pub fn move_to(&mut self, driver: &mut StepperDriver, target: i32) -> Result<(), Error> {
+    pub fn move_to(&mut self, driver: &mut StepperDriver, target: i32) -> Result {
         if self.state != State::Stopped {
             return Err(Error::NotStopped);
         }
@@ -164,4 +173,13 @@ impl Stepper {
     pub fn state(&self) -> State {
         self.state
     }
+
+    pub fn position(&self) -> i32 {
+        if let State::Running(dir) = self.state {
+            self.calc_position(dir).1
+        } else {
+            self.position
+        }
+    }
+
 }
