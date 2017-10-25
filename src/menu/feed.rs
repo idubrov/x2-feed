@@ -31,8 +31,7 @@ impl FeedRate {
 
     fn rate(&self) -> u16 {
         match *self {
-            FeedRate::IPM(rate) => rate,
-            FeedRate::IPR(rate) => rate
+            FeedRate::IPM(rate) | FeedRate::IPR(rate) => rate
         }
     }
 
