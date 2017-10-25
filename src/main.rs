@@ -139,15 +139,14 @@ fn init(p: init::Peripherals, r: init::Resources) {
     // STM32 could start much earlier than that
     delay::ms(50);
 
-    init_screen(&r);
+    let mut lcd = Display::new(r.SCREEN);
+    init_screen(&mut lcd);
 }
 
-fn init_screen(r: &init::Resources) {
-    let mut lcd = Display::new(r.SCREEN);
-
+fn init_screen(lcd: &mut config::Display) {
     lcd.init(lcd::FunctionLine::Line2, lcd::FunctionDots::Dots5x8);
     lcd.display(lcd::DisplayMode::DisplayOn, lcd::DisplayCursor::CursorOff, lcd::DisplayBlink::BlinkOff);
-    font::upload_characters(&mut lcd);
+    font::upload_characters(lcd);
     lcd.entry_mode(lcd::EntryModeDirection::EntryRight, lcd::EntryModeShift::NoShift);
 }
 
@@ -172,7 +171,17 @@ fn hall_interrupt(_t: &mut Threshold, r: TIM2::Resources) {
 
 #[no_mangle]
 #[lang = "panic_fmt"]
-pub unsafe extern "C" fn panic_fmt(_: ::core::fmt::Arguments, _: &'static str, _: u32, _: u32) -> ! {
+pub unsafe extern "C" fn panic_fmt(args: ::core::fmt::Arguments, _file: &'static str, line: u32, column: u32) -> ! {
+    use core::fmt::Write;
+
+    let screen = config::screen();
+    let mut lcd = Display::new(&screen);
+    init_screen(&mut lcd);
+    lcd.position(0, 0);
+    lcd.write_fmt(args).unwrap();
+    lcd.position(0, 1);
+    write!(lcd, "{}:{}                ", line, column).unwrap();
+
     // Immediately disable driver outputs, do it without claiming the driver
     let gpioa = &(*stm32f103xx::GPIOA.get());
     gpioa.write_pin(DRIVER_ENABLE_PIN, false);
