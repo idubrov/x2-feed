@@ -1,5 +1,4 @@
 #![feature(const_fn)]
-#![feature(used)]
 #![feature(proc_macro)]
 #![feature(try_trait)]
 #![feature(lang_items)]

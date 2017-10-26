@@ -50,14 +50,14 @@ pub fn run_setting(setting: &settings::Setting, label: &'static str, r: &mut idl
     r.ENCODER.set_current(orig - min);
     r.ENCODER.set_limit(max - min + 1);
     loop {
-        if let Event::Pressed(Button::Encoder) = r.CONTROLS.read_event() {
+        if let Event::Unpressed(Button::Encoder) = r.CONTROLS.read_event() {
             break;
         }
 
         lcd.position(0, 0);
         write!(lcd, "{: <16}", label).unwrap();
         lcd.position(0, 1);
-        write!(lcd, "{}", r.ENCODER.current() + min).unwrap();
+        write!(lcd, "{: <16}", r.ENCODER.current() + min).unwrap();
     }
 
     let current = r.ENCODER.current() + min;
@@ -120,7 +120,7 @@ macro_rules! menu_setting {
     }
 }
 
-const EXIT_DURATION_US: u32 = 1_000_000;
+const EXIT_DURATION_US: u32 = 1_500_000;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NavStatus {
@@ -149,8 +149,11 @@ impl Navigation {
         match event {
             Event::Pressed(Button::Encoder) => self.pressed_at = Some(delay::current()),
             Event::Unpressed(Button::Encoder) => {
+                let was_pressed = self.pressed_at.is_some();
                 self.pressed_at = None;
-                return Some(NavStatus::Select)
+                if was_pressed {
+                    return Some(NavStatus::Select)
+                }
             },
             _ => {}
         }

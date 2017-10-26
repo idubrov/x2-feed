@@ -63,8 +63,7 @@ pub struct FeedMenu {
     fast_feed: FeedRate,
     fast: bool,
     rpm: u32,
-    limits: (Option<i32>, Option<i32>),
-    nav: Navigation
+    limits: (Option<i32>, Option<i32>)
 }
 
 impl FeedMenu {
@@ -76,7 +75,6 @@ impl FeedMenu {
             fast_feed: FeedRate::IPM(30),
             fast: false,
             rpm: 0,
-            nav: Navigation::new(),
             limits: (None, None)
         }
     }
@@ -182,6 +180,8 @@ impl FeedMenu {
         r.ENCODER.set_limit(settings::MAX_IPM.read(r.FLASH));
 
         Display::new(r.SCREEN).clear();
+
+        let mut nav = Navigation::new();
         loop {
             let event = r.CONTROLS.read_event();
             let rpm = r.HALL.claim(t, |hall, _t| hall.rpm());
@@ -192,7 +192,7 @@ impl FeedMenu {
             self.update_rpm(rpm);
             self.update_screen(t, r, feed);
 
-            if let Some(status) = self.nav.check(event) {
+            if let Some(status) = nav.check(event) {
                 self.stop_and_wait(t, r);
                 return status;
             }

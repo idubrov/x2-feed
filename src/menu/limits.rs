@@ -25,7 +25,7 @@ impl <'a> EncoderDelta<'a> {
         encoder.set_current(LIMIT / 2);
         encoder.set_limit(LIMIT);
         Self {
-            last: 0,
+            last: LIMIT / 2,
             old_limit,
             old_position,
             encoder
@@ -55,7 +55,7 @@ fn print_limit(lcd: &mut Display, position: Option<i32>, steps_per_inch: u32) ->
             write!(lcd, "Not set")
         },
         Some(position) => {
-            let thousands = 1000 * position / (steps_per_inch as i32);
+            let thousands = (1000 * position + (steps_per_inch as i32) / 2) / (steps_per_inch as i32);
             let inches = thousands / 1000;
             let thousands = thousands % 1000;
             write!(lcd, "{}.{:0>3}", inches, thousands.abs())
@@ -89,7 +89,10 @@ pub fn capture_limit(t: &mut Threshold, r: &mut Resources, label: &'static str) 
 
         // Update stepper position
         if delta != 0 {
-            steputil::move_delta(t, delta, &mut r.DRIVER, &mut r.STEPPER);
+            let speed = ((10 * steps_per_inch) << 8) / 60;
+            // FIXME: Traversal speed?
+            r.STEPPER.claim_mut(t, |stepper, _t| stepper.set_speed(speed)).unwrap();
+            steputil::move_delta(t, delta * (steps_per_inch as i32) / 1000 , &mut r.DRIVER, &mut r.STEPPER);
             // FIXME: print "MOVING..."
             steputil::wait_stopped(t, &mut r.STEPPER);
         }

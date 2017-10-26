@@ -84,7 +84,12 @@ impl Stepper {
     fn preload_delay(&mut self, driver: &mut StepperDriver) {
         match self.stepgen.next() {
             Some(delay) => driver.preload_delay(round16_8(delay)),
-            None => driver.set_last(),
+            None => {
+                if let State::Running(dir) = self.state {
+                    self.state = State::Stopping(dir);
+                }
+                driver.set_last()
+            },
         }
     }
 
