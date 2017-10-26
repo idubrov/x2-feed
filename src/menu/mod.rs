@@ -1,6 +1,5 @@
 use idle;
 use rtfm::Threshold;
-use core::fmt;
 use self::feed::FeedMenu;
 use settings;
 
@@ -10,7 +9,7 @@ mod feed;
 mod limits;
 mod steputil;
 
-pub trait MenuItem: fmt::Display {
+pub trait MenuItem {
     fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources);
 
     fn is_active_by_default(&self, _t: &mut Threshold, _r: &mut idle::Resources) -> bool {

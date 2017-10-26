@@ -7,9 +7,9 @@ use hal::{Event, Button, delay};
 use settings;
 use estop;
 
-pub fn run_menu(items: &mut [&mut MenuItem], t: &mut Threshold, r: &mut idle::Resources) {
-    if let Some(def) = items.iter().position(|item| item.is_active_by_default(t, r)) {
-        items[def].run(t, r);
+pub fn run_menu(items: &mut [(&'static str, &mut MenuItem)], t: &mut Threshold, r: &mut idle::Resources) {
+    if let Some(def) = items.iter().position(|item| item.1.is_active_by_default(t, r)) {
+        items[def].1.run(t, r);
     }
 
     let mut selected = 0usize;
@@ -22,13 +22,13 @@ pub fn run_menu(items: &mut [&mut MenuItem], t: &mut Threshold, r: &mut idle::Re
         Display::new(r.SCREEN).clear();
         loop {
             selected = r.ENCODER.current() as usize;
-            let current: &mut MenuItem = items[selected];
+            let current = &mut items[selected];
 
             let event = r.CONTROLS.read_event();
             match nav.check(event) {
                 Some(NavStatus::Exit) => return,
                 Some(NavStatus::Select) => {
-                    current.run(t, r);
+                    current.1.run(t, r);
                     break;
                 },
                 _ => {},
@@ -36,7 +36,7 @@ pub fn run_menu(items: &mut [&mut MenuItem], t: &mut Threshold, r: &mut idle::Re
 
             let mut lcd = Display::new(r.SCREEN);
             lcd.position(0, 0);
-            write!(&mut lcd, "{}", current).unwrap();
+            write!(&mut lcd, "{}", current.0).unwrap();
         }
     }
 }
@@ -83,13 +83,7 @@ macro_rules! menu {
 
         impl MenuItem for $name {
             fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources) {
-                ::menu::util::run_menu(&mut [ $( &mut self.$item ),* ], t, r)
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "{: <16}", $label)
+                ::menu::util::run_menu(&mut [ $( (stringify!($item), &mut self.$item) ),* ], t, r)
             }
         }
     }
@@ -109,12 +103,6 @@ macro_rules! menu_setting {
         impl MenuItem for $name {
             fn run(&mut self, _t: &mut Threshold, r: &mut idle::Resources) {
                 ::menu::util::run_setting(&$setting, $label, r)
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "{: <16}", $label)
             }
         }
     }
