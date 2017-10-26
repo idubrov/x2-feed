@@ -80,11 +80,7 @@ impl FeedMenu {
         }
     }
 
-    fn update_screen(&self, t: &mut Threshold, r: &mut idle::Resources, feed: FeedRate) {
-        let run_state = r.STEPPER.claim(t, |s, _t| s.state());
-        let is_fast = r.CONTROLS.state().fast;
-
-        let mut lcd = Display::new(r.SCREEN);
+    fn update_screen(&self, lcd: &mut Display, feed: FeedRate, run_state: StepperState, is_fast: bool) {
         lcd.position(0, 0);
         let rrpm = (self.rpm + 128) >> 8;
 
@@ -140,8 +136,8 @@ impl FeedMenu {
         }
     }
 
-    fn update_movement(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources) {
-        let run_state = r.STEPPER.claim(t, |s, _t| s.state());
+    fn update_movement(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources, run_state: StepperState) {
+
         match (run_state, event) {
             (StepperState::Stopped, Event::Pressed(Button::Left)) => {
                 move_to(t, r, self.limits.0.map(|l| Target::Position(l)).unwrap_or(Target::LeftInf));
@@ -168,7 +164,7 @@ impl FeedMenu {
     }
 
     fn run_feed(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> NavStatus {
-        reload_stepper_settings(t, r);
+        steputil::reload_stepper_settings(t, r);
 
         // Pre-compute steps-per-inch
         let steps_per_inch = u32::from(settings::PITCH.read(r.FLASH)) *
@@ -183,13 +179,18 @@ impl FeedMenu {
         let mut nav = Navigation::new();
         loop {
             let event = r.CONTROLS.read_event();
+            let is_fast = r.CONTROLS.state().fast;
             let rpm = r.HALL.claim(t, |hall, _t| hall.rpm());
+            let run_state = r.STEPPER.claim(t, |s, _t| s.state());
 
             let feed = self.handle_feed_rate(event, r);
             self.update_speed(t, r, feed.to_speed(steps_per_inch, rpm));
-            self.update_movement(event, t, r);
+            self.update_movement(event, t, r, run_state);
             self.update_rpm(rpm);
-            self.update_screen(t, r, feed);
+            {
+                let mut lcd = Display::new(r.SCREEN);
+                self.update_screen(&mut lcd, feed, run_state, is_fast);
+            }
 
             if let Some(status) = nav.check(event) {
                 self.stop_and_wait(t, r);
@@ -253,19 +254,7 @@ fn move_to(t: &mut Threshold, r: &mut idle::Resources, target: Target) {
     r.STEPPER.claim_mut(t, |stepper, t| {
         driver.claim_mut(t, |driver, _t| {
             let driver: &mut StepperDriverResource = driver;
-            stepper.move_to(driver, target).unwrap()
+            stepper.set_target(driver, target).unwrap()
         })
     })
-}
-
-// Reload stepper settings from EEPROM
-fn reload_stepper_settings(t: &mut Threshold, r: &mut idle::Resources) {
-    let reversed = settings::IS_REVERSED.read(r.FLASH) != 0;
-    let acceleration = (u32::from(settings::ACCELERATION.read(r.FLASH)) *
-        u32::from(settings::MICROSTEPS.read(r.FLASH))) << 8;
-
-    r.STEPPER.claim_mut(t, |s, _t| {
-        s.set_reversed(reversed);
-        s.set_acceleration(acceleration).unwrap();
-    });
 }

@@ -28,9 +28,24 @@ impl From<stepgen::Error> for Error {
     }
 }
 
+pub struct Params {
+    pub reversed: bool,
+    pub disable_on_stop: bool,
+    pub acceleration: u32,
+}
+
+const fn default_params() -> Params {
+    Params {
+        reversed: false,
+        disable_on_stop: true,
+        /// Acceleration (steps per second per second), in 24.8 format.
+        acceleration: 0,
+    }
+}
+
 pub struct Stepper {
     stepgen: stepgen::Stepgen,
-    reversed: bool,
+    params: Params,
 
     position: i32,
     state: State,
@@ -59,21 +74,22 @@ impl Stepper {
     pub const fn new(freq: u32) -> Stepper {
         Stepper {
             stepgen: stepgen::Stepgen::new(freq),
-            reversed: false,
+            params: default_params(),
             position: 0,
             state: State::Stopped,
             target: Target::Stop,
         }
     }
 
-    /// Set reversed flag
-    pub fn set_reversed(&mut self, reversed: bool) {
-        self.reversed = reversed;
-    }
-
-    /// Set new acceleration (steps per second per second), in 24.8 format.
-    pub fn set_acceleration(&mut self, acceleration: u32) -> Result {
-        Ok(self.stepgen.set_acceleration(acceleration)?)
+    /// Set stepper parameters, should only be called when stepper motor is not running.
+    pub fn set_params(&mut self, params: Params) -> Result {
+        if self.state == State::Stopped {
+            self.stepgen.set_acceleration(params.acceleration)?;
+            self.params = params;
+            Ok(())
+        } else {
+            Err(Error::NotStopped)
+        }
     }
 
     /// Set slew speed (maximum speed stepper motor would run).
@@ -97,14 +113,16 @@ impl Stepper {
         }
     }
 
+    /// Account for the step made
     fn increment_position(&mut self) {
         match self.state {
             State::Running(true) => self.position += 1,
             State::Running(false) => self.position -= 1,
-            _ => {}
+            _ => panic!("should be running")
         }
     }
 
+    /// Interrupt callback, should be invoked after PWM have generated a pulse
     pub fn step_completed(&mut self, driver: &mut StepperDriver) {
         self.increment_position();
 
@@ -132,8 +150,30 @@ impl Stepper {
             }
             _ => {
                 self.state = State::Stopped;
-                driver.set_enable(false);
+                if self.params.disable_on_stop {
+                    driver.set_enable(false);
+                }
             }
+        }
+        Ok(())
+    }
+
+    fn continue_chase_target(&mut self, current_dir: bool) -> Result {
+        let (want_dir, want_step) = match self.target {
+            Target::LeftInf => (false, core::u32::MAX),
+            Target::RightInf => (true, core::u32::MAX),
+            Target::Position(target) => {
+                let delta = target - self.position;
+                (delta > 0, self.stepgen.current_step() + (delta.abs() as u32))
+            }
+            Target::Stop => (!current_dir, 0) // Request opposite direction to force a stop
+        };
+
+        if want_dir == current_dir {
+            self.stepgen.set_target_step(want_step)?;
+        } else {
+            // Need to stop to change direction
+            self.stepgen.set_target_step(0)?;
         }
         Ok(())
     }
@@ -143,7 +183,7 @@ impl Stepper {
         self.stepgen.set_target_step(target_step)?;
 
         // Set direction and enable driver outputs
-        driver.set_direction(dir != self.reversed);
+        driver.set_direction(dir != self.params.reversed);
         driver.set_enable(true);
 
         // Start pulse generation
@@ -157,31 +197,15 @@ impl Stepper {
 
     /// Move to given position. Note that no new move commands will be accepted while stepper is
     /// running. However, other target parameter, target speed, could be changed any time.
-    pub fn move_to(&mut self, driver: &mut StepperDriver, target: Target) -> Result {
-        self.target = target;
-
-        match self.state {
-            State::Running(dir) => {
-                let (want_dir, want_step) = match target {
-                    Target::LeftInf => (false, core::u32::MAX),
-                    Target::RightInf => (true, core::u32::MAX),
-                    Target::Position(target) => {
-                        let delta = target - self.position;
-                        // FIXME: remove current_step?...
-                        (delta > 0, self.stepgen.current_step() + (delta.abs() as u32))
-                    }
-                    Target::Stop => (!dir, 0) // Request opposite direction to make it stop
-                };
-
-                if want_dir == dir {
-                    self.stepgen.set_target_step(want_step)?;
-                } else {
-                    // Need to stop to change direction
-                    self.stepgen.set_target_step(0)?;
-                }
-                Ok(())
+    pub fn set_target(&mut self, driver: &mut StepperDriver, target: Target) -> Result {
+        if self.target != target {
+            self.target = target;
+            match self.state {
+                State::Running(dir) => self.continue_chase_target(dir),
+                State::Stopped => self.start_chase_target(driver),
             }
-            State::Stopped => self.start_chase_target(driver),
+        } else {
+            Ok(())
         }
     }
 
