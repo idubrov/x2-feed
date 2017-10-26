@@ -35,3 +35,5 @@ pub const MICROSTEPS: Setting = Setting::new(0x03, 16, 1, 125);
 pub const PITCH: Setting = Setting::new(0x04, 16, 1, 32);
 pub const MAX_IPM: Setting = Setting::new(0x05, 30, 1, 30);
 pub const ACCELERATION: Setting = Setting::new(0x06, 1200, 200, 2400); // Steps per second per second
+pub const TRAVERSE_IPM: Setting = Setting::new(0x07, 10, 1, 30); // Safe traversal speed (used to set limits)
+pub const FAST_TRAVERSE_IPM: Setting = Setting::new(0x08, 30, 1, 30); // Default fast traversal speed (used to set limits)

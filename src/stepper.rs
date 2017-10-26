@@ -7,8 +7,6 @@ use core;
 pub enum State {
     /// Not stepping
     Stopped,
-    /// Stepping and stop command was requested
-    StopRequested(bool),
     /// Stopping the motor
     Stopping(bool),
     /// Stepper motor is running
@@ -80,7 +78,7 @@ impl Stepper {
         Ok(self.stepgen.set_target_speed(speed)?)
     }
 
-    /// Returns `false` no new delay was loaded
+    /// Preload next delay for PWM
     fn preload_delay(&mut self, driver: &mut StepperDriver) {
         match self.stepgen.next() {
             Some(delay) => driver.preload_delay(round16_8(delay)),
@@ -95,12 +93,8 @@ impl Stepper {
 
     pub fn step_completed(&mut self, driver: &mut StepperDriver) {
         match self.state {
-            State::StopRequested(dir) => {
-                // Initiate stopping sequence -- set target step to 0
-                self.stepgen.set_target_step(0).unwrap();
-                self.state = State::Stopping(dir)
-            },
-            State::Stopping(dir) if !driver.is_running() => {
+            State::Stopping(dir) => {
+                assert!(!driver.is_running(), "must be stopped");
                 driver.set_enable(false);
                 self.state = State::Stopped;
 
@@ -169,9 +163,7 @@ impl Stepper {
 
 
     pub fn stop(&mut self) {
-        if let State::Running(dir) = self.state {
-            self.state = State::StopRequested(dir);
-        }
+        self.stepgen.set_target_step(0).unwrap();
     }
 
     /// Get the stepper state

@@ -24,6 +24,8 @@ menu_setting!(Microsteps, "Microsteps", settings::MICROSTEPS);
 menu_setting!(Pitch, "Pitch", settings::PITCH);
 menu_setting!(MaxIPM, "MaxIPM", settings::MAX_IPM);
 menu_setting!(Acceleration, "Acceleration", settings::ACCELERATION);
+menu_setting!(TraverseIPM, "Normal Speed", settings::TRAVERSE_IPM);
+menu_setting!(FastTraverseIPM, "Fast Speed", settings::FAST_TRAVERSE_IPM);
 
 menu!(SettingsMenu, "Settings", {
     IsLathe(),
@@ -31,7 +33,9 @@ menu!(SettingsMenu, "Settings", {
     Microsteps(),
     Pitch(),
     MaxIPM(),
-    Acceleration()
+    Acceleration(),
+    TraverseIPM(),
+    FastTraverseIPM(),
 });
 
 menu!(MainMenu, "Main", {
