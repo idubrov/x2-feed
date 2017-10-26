@@ -1,7 +1,6 @@
 use hal::{Event, Button};
 use idle;
-use config::{Display, StepperDriverResource, STEPS_PER_ROTATION};
-use core::fmt;
+use config::{Display, STEPS_PER_ROTATION};
 use font;
 use rtfm::{Resource, Threshold};
 use core::fmt::Write;
@@ -13,55 +12,10 @@ use stepper::Target;
 use menu::util::{Navigation, NavStatus};
 use menu::{steputil, limits, MenuItem};
 
-#[derive(Copy, Clone)]
-pub enum FeedRate {
-    IPM(u16),
-    IPR(u16)
-}
-
-impl FeedRate {
-    fn with_rate(&self, rate: u16) -> Self {
-        match *self {
-            FeedRate::IPM(_ipm) => FeedRate::IPM(rate),
-            FeedRate::IPR(_ipr) => FeedRate::IPR(rate)
-        }
-    }
-
-    fn rate(&self) -> u16 {
-        match *self {
-            FeedRate::IPM(rate) | FeedRate::IPR(rate) => rate
-        }
-    }
-
-    fn to_speed(&self, steps_per_inch: u32, rpm: u32) -> u32 {
-        // Update stepper speed based on current setting
-        // Shift by 8 to convert to 24.8 format
-        match *self {
-            FeedRate::IPM(ipm) => ((u32::from(ipm) * steps_per_inch) << 8) / 60,
-            FeedRate::IPR(ipr) => {
-                // IPR are in thou, so additionally divide by 1_000
-                // Also, RPM is already in 24.8 format, so no need to shift
-                // FIXME: wrapping?
-                (u64::from(ipr) * u64::from(rpm) * u64::from(steps_per_inch) / 60_000) as u32
-            },
-        }
-    }
-}
-
-impl fmt::Display for FeedRate {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            FeedRate::IPM(ipm) => write!(f, "{: >3} IPM", ipm),
-            FeedRate::IPR(ipr) => write!(f, "0.{:0>3} IPR", ipr)
-        }
-    }
-}
-
 pub struct FeedMenu {
-    speed: u32,
     error: Option<StepperError>,
-    slow_feed: FeedRate,
-    fast_feed: FeedRate,
+    slow_feed: steputil::FeedRate,
+    fast_feed: steputil::FeedRate,
     fast: bool,
     rpm: u32,
     limits: (Option<i32>, Option<i32>)
@@ -70,17 +24,16 @@ pub struct FeedMenu {
 impl FeedMenu {
     pub fn new(ipr: bool) -> FeedMenu {
         FeedMenu {
-            speed: 0,
             error: None,
-            slow_feed: if ipr { FeedRate::IPR(4) } else { FeedRate::IPM(10) },
-            fast_feed: FeedRate::IPM(30),
+            slow_feed: if ipr { steputil::FeedRate::IPR(4) } else { steputil::FeedRate::IPM(10) },
+            fast_feed: steputil::FeedRate::IPM(30),
             fast: false,
             rpm: 0,
             limits: (None, None)
         }
     }
 
-    fn update_screen(&self, lcd: &mut Display, feed: FeedRate, run_state: StepperState, is_fast: bool) {
+    fn update_screen(&self, lcd: &mut Display, feed: steputil::FeedRate, run_state: StepperState, is_fast: bool) {
         lcd.position(0, 0);
         let rrpm = (self.rpm + 128) >> 8;
 
@@ -104,7 +57,7 @@ impl FeedMenu {
         };
     }
 
-    fn handle_feed_rate(&mut self, event: Event, r: &mut idle::Resources) -> FeedRate {
+    fn handle_feed_rate(&mut self, event: Event, r: &mut idle::Resources) -> steputil::FeedRate {
         // Encoder is off by one (as it starts from 0)
         let proto = if self.fast { self.fast_feed } else { self.slow_feed };
         let mut feed = proto.with_rate(r.ENCODER.current() + 1);
@@ -130,22 +83,21 @@ impl FeedMenu {
     }
 
     fn update_speed(&mut self, t: &mut Threshold, r: &mut idle::Resources, speed: u32) {
-        if self.speed != speed {
-            self.speed = speed;
-            self.error = r.STEPPER.claim_mut(t, |s, _t| s.set_speed(speed)).err();
-        }
+        self.error = r.STEPPER.claim_mut(t, |s, _t| s.set_speed(speed)).err();
     }
 
     fn update_movement(&mut self, event: Event, t: &mut Threshold, r: &mut idle::Resources, run_state: StepperState) {
 
         match (run_state, event) {
             (StepperState::Stopped, Event::Pressed(Button::Left)) => {
-                move_to(t, r, self.limits.0.map(Target::Position).unwrap_or(Target::LeftInf));
+                steputil::move_to(t, &mut r.DRIVER, &mut r.STEPPER,
+                                  self.limits.0.map(Target::Position).unwrap_or(Target::LeftInf));
             }
 
             (StepperState::Stopped, Event::Pressed(Button::Right)) => {
                 // Use very high number for moving right
-                move_to(t, r, self.limits.1.map(Target::Position).unwrap_or(Target::RightInf));
+                steputil::move_to(t, &mut r.DRIVER, &mut r.STEPPER,
+                                  self.limits.1.map(Target::Position).unwrap_or(Target::RightInf));
             }
 
             (StepperState::Running(false), Event::Unpressed(Button::Left)) |
@@ -236,25 +188,8 @@ impl MenuItem for FeedMenu {
     fn is_active_by_default(&self, _t: &mut Threshold, r: &mut idle::Resources) -> bool {
         let lathe = settings::IS_LATHE.read(r.FLASH) != 0;
         match self.slow_feed {
-            FeedRate::IPR(_) => lathe,
-            FeedRate::IPM(_) => !lathe
+            steputil::FeedRate::IPR(_) => lathe,
+            steputil::FeedRate::IPM(_) => !lathe
         }
     }
-}
-
-impl fmt::Display for FeedMenu {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("Feed (IPM)")
-    }
-}
-
-// Helper function to run stepper command. Claims both driver and stepper.
-fn move_to(t: &mut Threshold, r: &mut idle::Resources, target: Target) {
-    let driver = &mut r.DRIVER;
-    r.STEPPER.claim_mut(t, |stepper, t| {
-        driver.claim_mut(t, |driver, _t| {
-            let driver: &mut StepperDriverResource = driver;
-            stepper.set_target(driver, target).unwrap()
-        })
-    })
 }

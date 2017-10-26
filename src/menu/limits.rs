@@ -7,6 +7,7 @@ use menu::steputil;
 use settings;
 use core::fmt;
 use menu::util::{Navigation, NavStatus};
+use stepper::Target;
 
 // Any reasonably big number to make sure you cannot crank half of it on the encoder between 'ticks'
 const LIMIT: u16 = 20_000;
@@ -92,7 +93,12 @@ pub fn capture_limit(t: &mut Threshold, r: &mut Resources, label: &'static str) 
             let speed = ((10 * steps_per_inch) << 8) / 60;
             // FIXME: Traversal speed?
             r.STEPPER.claim_mut(t, |stepper, _t| stepper.set_speed(speed)).expect("speed is ok");
-            steputil::move_delta(t, 1000 * delta * (steps_per_inch as i32) / 1000 , &mut r.DRIVER, &mut r.STEPPER);
+
+            let pos = r.STEPPER.claim(t, |stepper, _t| stepper.position());
+            // FIXME: use thousands of an inch as a counter/delta...
+            // Move a thou
+            let target = Target::Position(pos + (delta * (steps_per_inch as i32) / 1000));
+            steputil::move_to(t, &mut r.DRIVER, &mut r.STEPPER, target);
         }
 
         // Update limit

@@ -50,6 +50,7 @@ pub struct Stepper {
     position: i32,
     state: State,
     target: Target,
+    last_speed: u32,
 }
 
 #[derive(Clone, Debug, Copy, PartialEq)]
@@ -78,6 +79,7 @@ impl Stepper {
             position: 0,
             state: State::Stopped,
             target: Target::Stop,
+            last_speed: 0,
         }
     }
 
@@ -100,7 +102,12 @@ impl Stepper {
     ///
     /// * `speed` - target slew speed to reach, in steps per second, 24.8 format
     pub fn set_speed(&mut self, speed: u32) -> Result {
-        Ok(self.stepgen.set_target_speed(speed)?)
+        if self.last_speed != speed {
+            self.last_speed = speed;
+            self.stepgen.set_target_speed(speed)?;
+        }
+        Ok(())
+
     }
 
     /// Preload next delay for PWM
