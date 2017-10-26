@@ -2,7 +2,7 @@ use stepper;
 use cortex_m;
 use rtfm::{Resource, Threshold};
 use config::StepperDriverResource;
-use stepper::Stepper;
+use stepper::{Stepper, Target};
 
 pub fn move_delta<D, S>(t: &mut Threshold, delta: i32, driver: &mut D, stepper: &mut S)
     where D: Resource<Data = StepperDriverResource>, S: Resource<Data = Stepper> {
@@ -11,7 +11,7 @@ pub fn move_delta<D, S>(t: &mut Threshold, delta: i32, driver: &mut D, stepper: 
         driver.claim_mut(t, |driver, _t| {
             let driver: &mut StepperDriverResource = driver;
             let target = stepper.position() + delta;
-            stepper.move_to(driver, target).unwrap();
+            stepper.move_to(driver, Target::Position(target)).expect("move is ok");
         })
     })
 }

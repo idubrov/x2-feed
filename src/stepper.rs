@@ -7,8 +7,6 @@ use core;
 pub enum State {
     /// Not stepping
     Stopped,
-    /// Stopping the motor
-    Stopping(bool),
     /// Stepper motor is running
     Running(bool),
 }
@@ -34,10 +32,21 @@ pub struct Stepper {
     stepgen: stepgen::Stepgen,
     reversed: bool,
 
-    base_step: u32,
     position: i32,
-
     state: State,
+    target: Target,
+}
+
+#[derive(Clone, Debug, Copy, PartialEq)]
+pub enum Target {
+    /// Move to the left indefinitely
+    LeftInf,
+    /// Move to the right indefinitely
+    RightInf,
+    /// Stop
+    Stop,
+    /// Move till the given position
+    Position(i32)
 }
 
 // Round value from 16.8 format to u16
@@ -51,9 +60,9 @@ impl Stepper {
         Stepper {
             stepgen: stepgen::Stepgen::new(freq),
             reversed: false,
-            base_step: 0,
             position: 0,
             state: State::Stopped,
+            target: Target::Stop,
         }
     }
 
@@ -83,77 +92,62 @@ impl Stepper {
         match self.stepgen.next() {
             Some(delay) => driver.preload_delay(round16_8(delay)),
             None => {
-                if let State::Running(dir) = self.state {
-                    self.state = State::Stopping(dir);
-                }
                 driver.set_last()
-            },
+            }
+        }
+    }
+
+    fn increment_position(&mut self) {
+        match self.state {
+            State::Running(true) => self.position += 1,
+            State::Running(false) => self.position -= 1,
+            _ => {}
         }
     }
 
     pub fn step_completed(&mut self, driver: &mut StepperDriver) {
-        match self.state {
-            State::Stopping(dir) => {
-                assert!(!driver.is_running(), "must be stopped");
-                driver.set_enable(false);
-                self.state = State::Stopped;
+        self.increment_position();
 
-                // Update internal position counter. We do it at the end to reduce amount of work
-                // we do per step (direction could not be changed while running, so all steps go
-                // in one direction).
-                self.update_position(dir);
-                return; // Do not preload the delay -- we are stopped now
-            },
-            State::Stopped =>
-                panic!("Should not receive interrupts when stopped!"),
-            // Nothing otherwise, just preload the delay
-            _ => ()
-        };
-        self.preload_delay(driver);
-    }
-
-    // Incorporate outstanding steps from the stepgen into current position
-    fn update_position(&mut self, dir: bool) {
-        let step_pos = self.calc_position(dir);
-        self.base_step = step_pos.0;
-        self.position = step_pos.1;
-    }
-
-    // Compute current position based on stepgen step + last position
-    fn calc_position(&self, dir: bool) -> (u32, i32) {
-        let step = self.stepgen.current_step();
-        let offset = (step - self.base_step) as i32;
-        if dir {
-            (step, self.position + offset)
+        // Preload next step if still running
+        if driver.is_running() {
+            self.preload_delay(driver);
         } else {
-            (step, self.position - offset)
+            self.start_chase_target(driver).expect("should chase target");
         }
     }
 
-    /// Move to given position. Note that no new move commands will be accepted while stepper is
-    /// running. However, other target parameter, target speed, could be changed any time.
-    pub fn move_to(&mut self, driver: &mut StepperDriver, target: i32) -> Result {
-        if self.state != State::Stopped {
-            return Err(Error::NotStopped);
+    fn start_chase_target(&mut self, driver: &mut StepperDriver) -> Result {
+        match self.target {
+            Target::LeftInf => {
+                self.init_move(driver, false, core::u32::MAX)?;
+            }
+            Target::RightInf => {
+                self.init_move(driver, true, core::u32::MAX)?;
+            }
+            Target::Position(target) => {
+                let delta = target - self.position;
+                if delta != 0 {
+                    self.init_move(driver, delta > 0, delta.abs() as u32)?;
+                }
+            }
+            _ => {
+                self.state = State::Stopped;
+                driver.set_enable(false);
+            }
         }
+        Ok(())
+    }
 
-        if self.position == target {
-            // Nothing to do!
-            return Ok(());
-        }
-
-        let delta = target - self.position;
-        let dir = delta > 0;
-
+    fn init_move(&mut self, driver: &mut StepperDriver, dir: bool, target_step: u32) -> Result {
         self.state = State::Running(dir);
-        self.stepgen.set_target_step(self.base_step + (delta.abs() as u32))?;
+        self.stepgen.set_target_step(target_step)?;
 
         // Set direction and enable driver outputs
         driver.set_direction(dir != self.reversed);
         driver.set_enable(true);
 
         // Start pulse generation
-        let delay = self.stepgen.next().unwrap();
+        let delay = self.stepgen.next().expect("must have pulse");
         driver.start(round16_8(delay));
 
         // Immediately preload the second delay
@@ -161,9 +155,42 @@ impl Stepper {
         Ok(())
     }
 
+    /// Move to given position. Note that no new move commands will be accepted while stepper is
+    /// running. However, other target parameter, target speed, could be changed any time.
+    pub fn move_to(&mut self, driver: &mut StepperDriver, target: Target) -> Result {
+        self.target = target;
+
+        match self.state {
+            State::Running(dir) => {
+                let (want_dir, want_step) = match target {
+                    Target::LeftInf => (false, core::u32::MAX),
+                    Target::RightInf => (true, core::u32::MAX),
+                    Target::Position(target) => {
+                        let delta = target - self.position;
+                        // FIXME: remove current_step?...
+                        (delta > 0, self.stepgen.current_step() + (delta.abs() as u32))
+                    }
+                    Target::Stop => (!dir, 0) // Request opposite direction to make it stop
+                };
+
+                if want_dir == dir {
+                    self.stepgen.set_target_step(want_step)?;
+                } else {
+                    // Need to stop to change direction
+                    self.stepgen.set_target_step(0)?;
+                }
+                Ok(())
+            }
+            State::Stopped => self.start_chase_target(driver),
+        }
+    }
 
     pub fn stop(&mut self) {
-        self.stepgen.set_target_step(0).unwrap();
+        // FIXME: remove guard if, otherwise cannot call stop if speed is not set...
+        if self.stepgen.target_step() != 0 {
+            self.stepgen.set_target_step(0).expect("should stop");
+            self.target = Target::Stop;
+        }
     }
 
     /// Get the stepper state
@@ -171,12 +198,8 @@ impl Stepper {
         self.state
     }
 
+    /// Current stepper position
     pub fn position(&self) -> i32 {
-        if let State::Running(dir) = self.state {
-            self.calc_position(dir).1
-        } else {
-            self.position
-        }
+        self.position
     }
-
 }

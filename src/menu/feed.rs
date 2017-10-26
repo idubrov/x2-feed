@@ -9,6 +9,7 @@ use settings;
 use stepgen::Error as StepgenError;
 use stepper::Error as StepperError;
 use stepper::State as StepperState;
+use stepper::Target;
 use menu::util::{Navigation, NavStatus};
 use menu::{steputil, limits, MenuItem};
 
@@ -143,14 +144,12 @@ impl FeedMenu {
         let run_state = r.STEPPER.claim(t, |s, _t| s.state());
         match (run_state, event) {
             (StepperState::Stopped, Event::Pressed(Button::Left)) => {
-                // Use very low number for moving left
-                // FIXME: explicit support for -+INF?
-                move_to(t, r, self.limits.0.unwrap_or(-1_000_000_000));
+                move_to(t, r, self.limits.0.map(|l| Target::Position(l)).unwrap_or(Target::LeftInf));
             }
 
             (StepperState::Stopped, Event::Pressed(Button::Right)) => {
                 // Use very high number for moving right
-                move_to(t, r, self.limits.1.unwrap_or(1_000_000_000));
+                move_to(t, r, self.limits.1.map(|l| Target::Position(l)).unwrap_or(Target::RightInf));
             }
 
             (StepperState::Running(false), Event::Unpressed(Button::Left)) |
@@ -249,7 +248,7 @@ impl fmt::Display for FeedMenu {
 }
 
 // Helper function to run stepper command. Claims both driver and stepper.
-fn move_to(t: &mut Threshold, r: &mut idle::Resources, target: i32) {
+fn move_to(t: &mut Threshold, r: &mut idle::Resources, target: Target) {
     let driver = &mut r.DRIVER;
     r.STEPPER.claim_mut(t, |stepper, t| {
         driver.claim_mut(t, |driver, _t| {

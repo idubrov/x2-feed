@@ -35,7 +35,7 @@ menu!(SettingsMenu, "Settings", {
     MaxIPM(),
     Acceleration(),
     TraverseIPM(),
-    FastTraverseIPM(),
+    FastTraverseIPM()
 });
 
 menu!(MainMenu, "Main", {

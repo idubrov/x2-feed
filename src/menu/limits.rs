@@ -91,10 +91,8 @@ pub fn capture_limit(t: &mut Threshold, r: &mut Resources, label: &'static str) 
         if delta != 0 {
             let speed = ((10 * steps_per_inch) << 8) / 60;
             // FIXME: Traversal speed?
-            r.STEPPER.claim_mut(t, |stepper, _t| stepper.set_speed(speed)).unwrap();
-            steputil::move_delta(t, delta * (steps_per_inch as i32) / 1000 , &mut r.DRIVER, &mut r.STEPPER);
-            // FIXME: print "MOVING..."
-            steputil::wait_stopped(t, &mut r.STEPPER);
+            r.STEPPER.claim_mut(t, |stepper, _t| stepper.set_speed(speed)).expect("speed is ok");
+            steputil::move_delta(t, 1000 * delta * (steps_per_inch as i32) / 1000 , &mut r.DRIVER, &mut r.STEPPER);
         }
 
         // Update limit
