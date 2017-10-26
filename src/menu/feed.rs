@@ -140,12 +140,12 @@ impl FeedMenu {
 
         match (run_state, event) {
             (StepperState::Stopped, Event::Pressed(Button::Left)) => {
-                move_to(t, r, self.limits.0.map(|l| Target::Position(l)).unwrap_or(Target::LeftInf));
+                move_to(t, r, self.limits.0.map(Target::Position).unwrap_or(Target::LeftInf));
             }
 
             (StepperState::Stopped, Event::Pressed(Button::Right)) => {
                 // Use very high number for moving right
-                move_to(t, r, self.limits.1.map(|l| Target::Position(l)).unwrap_or(Target::RightInf));
+                move_to(t, r, self.limits.1.map(Target::Position).unwrap_or(Target::RightInf));
             }
 
             (StepperState::Running(false), Event::Unpressed(Button::Left)) |
