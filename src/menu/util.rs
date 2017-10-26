@@ -2,9 +2,10 @@ use idle;
 use rtfm::Threshold;
 use core::fmt::Write;
 use config::Display;
-use ::menu::MenuItem;
+use menu::MenuItem;
 use hal::{Event, Button, delay};
 use settings;
+use estop;
 
 pub fn run_menu(items: &mut [&mut MenuItem], t: &mut Threshold, r: &mut idle::Resources) {
     if let Some(def) = items.iter().position(|item| item.is_active_by_default(t, r)) {
@@ -12,7 +13,7 @@ pub fn run_menu(items: &mut [&mut MenuItem], t: &mut Threshold, r: &mut idle::Re
     }
 
     let mut selected = 0usize;
-    let mut exit: Exit = Exit::new();
+    let mut nav: Navigation = Navigation::new();
 
     loop {
         r.ENCODER.set_current(selected as u16);
@@ -24,18 +25,18 @@ pub fn run_menu(items: &mut [&mut MenuItem], t: &mut Threshold, r: &mut idle::Re
             let current: &mut MenuItem = items[selected];
 
             let event = r.CONTROLS.read_event();
-            if let Event::Unpressed(Button::Encoder) = event {
-                current.run(t, r);
-                break;
+            match nav.check(event) {
+                Some(NavStatus::Exit) => return,
+                Some(NavStatus::Select) => {
+                    current.run(t, r);
+                    break;
+                },
+                _ => {},
             }
 
             let mut lcd = Display::new(r.SCREEN);
             lcd.position(0, 0);
             write!(&mut lcd, "{}", current).unwrap();
-
-            if exit.should_exit(event) {
-                return;
-            }
         }
     }
 }
@@ -121,27 +122,38 @@ macro_rules! menu_setting {
 
 const EXIT_DURATION_US: u32 = 1_000_000;
 
-pub struct Exit {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NavStatus {
+    Exit,
+    Select
+}
+
+pub struct Navigation {
     pressed_at: Option<u32>
 }
 
-impl Exit {
+impl Navigation {
     pub fn new() -> Self {
         Self {
             pressed_at: None
         }
     }
-    pub fn should_exit(&mut self, event: Event) -> bool {
+    pub fn check(&mut self, event: Event) -> Option<NavStatus> {
+        estop::check();
+
         if let Some(pressed_at) = self.pressed_at {
             if delay::duration_us(pressed_at) >= EXIT_DURATION_US {
-                return true;
+                return Some(NavStatus::Exit);
             }
         }
         match event {
             Event::Pressed(Button::Encoder) => self.pressed_at = Some(delay::current()),
-            Event::Unpressed(Button::Encoder) => self.pressed_at = None,
+            Event::Unpressed(Button::Encoder) => {
+                self.pressed_at = None;
+                return Some(NavStatus::Select)
+            },
             _ => {}
         }
-        false
+        None
     }
 }

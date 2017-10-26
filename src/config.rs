@@ -2,6 +2,8 @@ use stm32f103xx::{GPIOA, GPIOB};
 use hal;
 use lcd;
 
+pub const STEPS_PER_ROTATION: u32 = 200;
+
 pub type ScreenResource = hal::Screen<GPIOB>;
 pub type Display<'a> = lcd::Display<'a, ScreenResource>;
 pub const fn screen() -> ScreenResource {

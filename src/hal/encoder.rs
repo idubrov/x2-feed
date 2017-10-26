@@ -39,6 +39,11 @@ impl <Port> QuadEncoder<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
         tim3.cr1.write(|w| w.cen().enabled());
     }
 
+    /// Get rotary encoder limit.
+    pub fn get_limit(&self) -> u16 {
+        (self.unsafe_timer().arr.read().arr().bits() + 1) / 2
+    }
+
     /// Set rotary encoder limit.
     pub fn set_limit(&mut self, limit : u16) {
         self.unsafe_timer().arr.write(|w| w.arr().bits((limit * 2) - 1));

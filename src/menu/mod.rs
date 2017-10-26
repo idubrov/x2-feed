@@ -7,6 +7,8 @@ use settings;
 #[macro_use]
 mod util;
 mod feed;
+mod limits;
+mod steputil;
 
 pub trait MenuItem: fmt::Display {
     fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources);

@@ -172,8 +172,12 @@ fn hall_interrupt(_t: &mut Threshold, r: TIM2::Resources) {
 #[no_mangle]
 #[lang = "panic_fmt"]
 pub unsafe extern "C" fn panic_fmt(args: ::core::fmt::Arguments, _file: &'static str, line: u32, column: u32) -> ! {
-    use core::fmt::Write;
+    // Immediately disable driver outputs, do it without claiming the driver
+    let gpioa = &(*stm32f103xx::GPIOA.get());
+    gpioa.write_pin(DRIVER_ENABLE_PIN, false);
 
+    // Print reason on the display
+    use core::fmt::Write;
     let screen = config::screen();
     let mut lcd = Display::new(&screen);
     init_screen(&mut lcd);
@@ -181,10 +185,6 @@ pub unsafe extern "C" fn panic_fmt(args: ::core::fmt::Arguments, _file: &'static
     lcd.write_fmt(args).unwrap();
     lcd.position(0, 1);
     write!(lcd, "{}:{}                ", line, column).unwrap();
-
-    // Immediately disable driver outputs, do it without claiming the driver
-    let gpioa = &(*stm32f103xx::GPIOA.get());
-    gpioa.write_pin(DRIVER_ENABLE_PIN, false);
 
     loop {
         cortex_m::asm::nop();

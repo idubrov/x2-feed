@@ -1,20 +1,16 @@
 use hal::{Event, Button};
 use idle;
-use config::{Display, StepperDriverResource};
+use config::{Display, StepperDriverResource, STEPS_PER_ROTATION};
 use core::fmt;
 use font;
 use rtfm::{Resource, Threshold};
-use estop;
-use menu::MenuItem;
 use core::fmt::Write;
-use cortex_m;
 use settings;
 use stepgen::Error as StepgenError;
 use stepper::Error as StepperError;
 use stepper::State as StepperState;
-use menu::util::Exit;
-
-const STEPS_PER_ROTATION: u32 = 200;
+use menu::util::{Navigation, NavStatus};
+use menu::{steputil, limits, MenuItem};
 
 #[derive(Copy, Clone)]
 pub enum FeedRate {
@@ -68,7 +64,7 @@ pub struct FeedMenu {
     fast: bool,
     rpm: u32,
     limits: (Option<i32>, Option<i32>),
-    exit: Exit
+    nav: Navigation
 }
 
 impl FeedMenu {
@@ -80,7 +76,7 @@ impl FeedMenu {
             fast_feed: FeedRate::IPM(30),
             fast: false,
             rpm: 0,
-            exit: Exit::new(),
+            nav: Navigation::new(),
             limits: (None, None)
         }
     }
@@ -174,7 +170,7 @@ impl FeedMenu {
         }
     }
 
-    fn run_feed(&mut self, t: &mut Threshold, r: &mut idle::Resources) {
+    fn run_feed(&mut self, t: &mut Threshold, r: &mut idle::Resources) -> NavStatus {
         reload_stepper_settings(t, r);
 
         // Pre-compute steps-per-inch
@@ -187,8 +183,6 @@ impl FeedMenu {
 
         Display::new(r.SCREEN).clear();
         loop {
-            estop::check(&mut Display::new(r.SCREEN));
-
             let event = r.CONTROLS.read_event();
             let rpm = r.HALL.claim(t, |hall, _t| hall.rpm());
 
@@ -198,12 +192,11 @@ impl FeedMenu {
             self.update_rpm(rpm);
             self.update_screen(t, r, feed);
 
-            if self.exit.should_exit(event) {
-                break;
+            if let Some(status) = self.nav.check(event) {
+                self.stop_and_wait(t, r);
+                return status;
             }
         }
-
-        self.stop_and_wait(t, r);
     }
 
     fn stop_and_wait(&self, t: &mut Threshold, r: &mut idle::Resources) {
@@ -217,22 +210,27 @@ impl FeedMenu {
             write!(lcd, "  ...").unwrap();
         }
 
-        while r.STEPPER.claim(t, |s, _t| {
-            if let StepperState::Stopped = s.state() {
-                return false;
-            }
-            // Enter WFI while we block stepper interrupt (via claim above), to avoid race conditions.
-            // We should still wake up if interrupt happens (but it won't be handled until we exit
-            // the claim block).
-            cortex_m::asm::wfi();
-            true
-        }) {}
+        steputil::wait_stopped(t, &mut r.STEPPER);
     }
 }
 
 impl MenuItem for FeedMenu {
     fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources) {
-        self.run_feed(t, r)
+        loop {
+
+            // FIXME: make submenus?
+            if let NavStatus::Exit = self.run_feed(t, r) {
+                break;
+            }
+
+            let (left, status) = limits::capture_limit(t, r, "Left");
+            if let NavStatus::Exit = status { break; }
+
+            let (right, status) = limits::capture_limit(t, r, "Right");
+            if let NavStatus::Exit = status { break; }
+
+            self.limits = (left, right);
+        }
     }
 
     fn is_active_by_default(&self, _t: &mut Threshold, r: &mut idle::Resources) -> bool {
