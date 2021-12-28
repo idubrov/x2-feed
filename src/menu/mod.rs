@@ -1,8 +1,18 @@
-use idle;
-use rtfm::Threshold;
-use core::fmt;
 use self::feed::FeedMenu;
-use settings;
+use crate::settings;
+use core::fmt;
+use stm32f1::stm32f103::FLASH;
+use stm32_hal::gpio::Pin;
+use crate::hal::{Controls, Display, QuadEncoder};
+
+pub struct MenuResources<'a> {
+    pub encoder: &'a mut QuadEncoder,
+    pub display: &'a mut Display,
+    pub controls: &'a mut Controls,
+    pub flash: &'a mut FLASH,
+    pub estop: &'a Pin,
+    pub shared: crate::app::idle::SharedResources<'a>,
+}
 
 #[macro_use]
 mod util;
@@ -11,9 +21,9 @@ mod limits;
 mod steputil;
 
 pub trait MenuItem: fmt::Display {
-    fn run(&mut self, t: &mut Threshold, r: &mut idle::Resources);
+    fn run(&mut self, r: &mut MenuResources);
 
-    fn is_active_by_default(&self, _t: &mut Threshold, _r: &mut idle::Resources) -> bool {
+    fn is_active_by_default(&self, _r: &mut MenuResources) -> bool {
         false
     }
 }

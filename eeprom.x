@@ -11,7 +11,8 @@ SECTIONS
     } > FLASH
     _eeprom_end = .;
 }
+INSERT AFTER .gnu.sgstubs;
 
-ASSERT(_sidata + (_edata - _sdata) <= _eeprom_start, "
+ASSERT(__sidata + (__edata - __sdata) <= _eeprom_start, "
 The '.data' overlaps with EEPROM area. Reduce the amount of FLASH pages used for
 EEPROM or reduce the amount of code stored on the FLASH");

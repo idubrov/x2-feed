@@ -1,23 +1,17 @@
-use stepper;
-use cortex_m;
-use rtfm::{Resource, Threshold};
-use config::StepperDriverResource;
-use stepper::Stepper;
+use crate::stepper;
+use rtic::Mutex;
 
-pub fn move_delta<D, S>(t: &mut Threshold, delta: i32, driver: &mut D, stepper: &mut S)
-    where D: Resource<Data = StepperDriverResource>, S: Resource<Data = Stepper> {
-
-    stepper.claim_mut(t, |stepper, t| {
-        driver.claim_mut(t, |driver, _t| {
-            let driver: &mut StepperDriverResource = driver;
-            let target = stepper.position() + delta;
-            stepper.move_to(driver, target).unwrap();
+pub fn move_delta(delta: i32, r: &mut crate::app::idle::SharedResources) {
+    r.stepper
+        .lock(|s| {
+            let target = s.position() + delta;
+            s.move_to(target)
         })
-    })
+        .unwrap()
 }
 
-pub fn wait_stopped<S: Resource<Data = Stepper>>(t: &mut Threshold, stepper: &mut S) {
-    while stepper.claim(t, |s, _t| {
+pub fn wait_stopped(r: &mut crate::app::idle::SharedResources) {
+    while r.stepper.lock(|s| {
         if let stepper::State::Stopped = s.state() {
             return false;
         }

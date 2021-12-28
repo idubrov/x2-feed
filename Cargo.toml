@@ -1,46 +1,36 @@
 [package]
 authors = ["Ivan Dubrov <dubrov.ivan@gmail.com>"]
 description = "X2 PowerFeed and Motor Control"
+edition = "2021"
+readme = "README.md"
 name = "x2-feed"
 version = "0.2.1-pre"
 
 [dependencies]
-cortex-m = "0.3.1"
+cortex-m = "0.7.3"
+cortex-m-rt = "0.7.1"
+cortex-m-rtic = "1.0.0"
+stm32f1 = { version = "0.14.0", features = ["stm32f103"] }
+eeprom = { version = "0.2.0-alpha", path = "crates/eeprom", features = ["stm32f103", "default-eeprom"] }
+stm32-hal = { version = "0.3.0-alpha", path = "crates/stm32-hal" }
+lcd = { version = "0.5.0-alpha", path = "crates/lcd" }
+stepgen = { version = "0.2.0-alpha", path = "crates/stepgen" }
 
-[dependencies.stepgen]
-version = "0.1.3-alpha.0"
-git = "https://github.com/idubrov/stepgen"
-
-[dependencies.cortex-m-rtfm]
-version = "0.2.1"
-
-[dependencies.cortex-m-rt]
-version = "0.3.5"
-
-[dependencies.stm32f103xx]
-version = "0.7.5"
-features = ["rt"]
-
-[dependencies.lcd]
-version = "0.3.0"
-
-[dependencies.stm32-hal]
-version = "0.2.0"
-features = ["use-stm32f103xx"]
-
-[dependencies.bare-metal]
-version = "0.1.1"
-
-[dependencies.eeprom]
-version = "0.1.0"
-features = ["use-stm32f103xx"]
-
-[profile]
-
-[profile.dev]
-lto = true
-opt-level = 1
+[[bin]]
+name = "x2-feed"
+test = false
+bench = false
 
 [profile.release]
-debug = false
+codegen-units = 1
+debug = true
 lto = true
+
+[workspace]
+members = [
+    ".",
+    "crates/eeprom",
+    "crates/lcd",
+    "crates/stepgen",
+    "crates/stm32-hal",
+]

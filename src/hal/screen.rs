@@ -1,63 +1,61 @@
-use bare_metal::Peripheral;
-use stm32f103xx::gpioa;
-use core::ops::Deref;
-use stm32_hal::gpio::Port;
-use lcd;
+use stm32_hal::gpio::Pin;
 
-pub struct Screen<Port: 'static> {
-    port: Peripheral<Port>,
-    rs: usize,
-    rw: usize,
-    e: usize,
-    data: usize
+pub struct Screen {
+    rs: Pin,
+    rw: Pin,
+    e: Pin,
+    data: [Pin; 4],
 }
 
-impl <Port> Screen<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
-    pub const fn new(port: Peripheral<Port>, rs: usize, rw: usize, e: usize, data: usize) -> Screen<Port> {
-        Screen { port, rs, rw, e, data }
+impl Screen {
+    pub fn new(rs: Pin, rw: Pin, e: Pin, data: [Pin; 4]) -> Screen {
+        let screen = Screen {
+            rs,
+            rw,
+            e,
+            data,
+        };
+        screen.init();
+        screen
     }
 
-    pub fn init(&self) {
-        let port = self.port();
-
+    fn init(&self) {
         // Init data port, 4 bits
         for i in 0..4 {
-            port.write_pin(self.data + i, false);
-            port.pin_config(self.data + i).push_pull().output2();
+            self.data[i].off();
+            self.data[i].config().push_pull().output2();
         }
 
         // Init control ports
-        port.pin_config(self.rs).push_pull().output2();
-        port.pin_config(self.rw).push_pull().output2();
-        port.pin_config(self.e).push_pull().output2();
+        self.rs.config().push_pull().output2();
+        self.rw.config().push_pull().output2();
+        self.e.config().push_pull().output2();
 
-        port.write_pin(self.rs, false);
-        port.write_pin(self.rw, false);
-        port.write_pin(self.e, false);
-    }
-
-    fn port(&self) -> &Port {
-        unsafe { &*self.port.get() }
+        self.rs.write(false);
+        self.rw.write(false);
+        self.e.write(false);
     }
 }
 
-
-impl <Port: Deref<Target = gpioa::RegisterBlock>> lcd::Hardware for Screen<Port> {
-    fn rs(&self, bit: bool) {
-        self.port().write_pin(self.rs, bit);
+impl lcd::Hardware for Screen {
+    fn rs(&mut self, bit: bool) {
+        self.rs.write(bit);
     }
 
-    fn enable(&self, bit: bool) {
-        self.port().write_pin(self.e, bit);
+    fn enable(&mut self, bit: bool) {
+        self.e.write(bit);
     }
 
-    fn data(&self, data: u8) {
-        self.port().write_pin_range(self.data, 4, u16::from(data));
+    fn data(&mut self, data: u8) {
+        self.data[0].write(((data >> 0) & 1) != 0);
+        self.data[1].write(((data >> 1) & 1) != 0);
+        self.data[2].write(((data >> 2) & 1) != 0);
+        self.data[3].write(((data >> 3) & 1) != 0);
     }
 }
 
-impl <Port> lcd::Delay for Screen<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
-    fn delay_us(&self, delay_usec: u32) {
+impl lcd::Delay for Screen {
+    fn delay_us(&mut self, delay_usec: u32) {
         super::delay::us(delay_usec);
     }
 }

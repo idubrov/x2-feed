@@ -1,11 +1,6 @@
-#![feature(const_fn)]
-#![feature(proc_macro)]
-#![feature(try_trait)]
-#![feature(lang_items)]
 #![no_std]
-#![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
-#![cfg_attr(feature = "cargo-clippy", allow(eq_op))]
-#![deny(warnings)]
+#![no_main]
+//#![deny(warnings)]
 
 //! Stepper-motor based power feed for X2 mill.
 //!
@@ -21,171 +16,251 @@
 //! # PCB
 //! See PCB (Eagle CAD) in the [pcb/](pcb/) directory.
 
-extern crate cortex_m;
-extern crate stm32f103xx;
-extern crate stepgen;
-extern crate lcd;
-extern crate stm32_hal;
-extern crate cortex_m_rtfm as rtfm;
-extern crate bare_metal;
-extern crate eeprom;
-
-use stm32f103xx::{GPIOA, GPIOB};
-use hal::*;
-use config::*;
-use rtfm::{app, Threshold};
-use hal::{clock, delay};
-use eeprom::EEPROM;
-use menu::{MenuItem, MainMenu};
+use core::panic::PanicInfo;
 use stm32_hal::gpio::Port;
+use stm32f1::stm32f103::Peripherals;
+use crate::hal::{Display, Screen};
 
-mod hal;
 mod config;
 mod font;
-mod stepper;
+mod hal;
 mod menu;
-mod estop;
 mod settings;
+mod stepper;
 
-app! {
-    device: stm32f103xx,
+#[rtic::app(device = stm32f1::stm32f103, peripherals = true)]
+mod app {
+    use crate::hal::{clock, Controls, RpmSensor, delay, DRIVER_TICK_FREQUENCY, Display, Screen, Led, QuadEncoder, StepperDriverImpl};
+    use crate::menu::{MainMenu, MenuItem, MenuResources};
+    use crate::stepper::Stepper;
+    use eeprom::EEPROM;
+    use stm32_hal::gpio::{Pin, Port};
+    use stm32f1::stm32f103::FLASH;
 
-    resources: {
-        static STEPPER: stepper::Stepper = stepper::Stepper::new(DRIVER_TICK_FREQUENCY);
-        static HALL: RpmSensorResource = config::hall();
-        static DRIVER: StepperDriverResource = config::driver();
-        static ENCODER: QuadEncoderResource = config::encoder();
-        static LED: LedResource = config::led();
-        static CONTROLS: ControlsResource = config::controls();
-        static SCREEN: ScreenResource = config::screen();
-    },
+    #[shared]
+    struct Shared {
+        stepper: Stepper<StepperDriverImpl>,
+        hall: RpmSensor,
+    }
 
-    idle: {
-        resources: [DRIVER, STEPPER, ENCODER, SYST, GPIOA, GPIOB, HALL, LED, CONTROLS, SCREEN, FLASH],
-    },
+    #[local]
+    struct Local {
+        display: Display,
+        led: Led,
+        encoder: QuadEncoder,
+        controls: Controls,
+        flash: FLASH,
+        estop: Pin,
+    }
 
-    tasks: {
-        TIM1_UP_TIM10: {
-            path: step_completed,
-            priority: 16,
-            resources: [DRIVER, STEPPER]
-        },
+    #[init]
+    fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
+        let mut core: cortex_m::Peripherals = cx.core;
+        let mut peripherals: stm32f1::stm32f103::Peripherals = cx.device;
 
-        TIM2: {
-            path: hall_interrupt,
-            priority: 1,
-            resources: [HALL]
+        clock::setup(&mut peripherals.RCC, &mut core.SYST, &mut peripherals.FLASH);
+
+        // Enable peripherals
+        peripherals.RCC.apb1enr.modify(|_, w| w.tim2en().enabled());
+        peripherals.RCC.apb1enr.modify(|_, w| w.tim3en().enabled());
+        peripherals.RCC.apb2enr.modify(|_, w| w.tim1en().enabled());
+        peripherals.RCC.apb2enr.modify(|_, w| w.iopaen().enabled());
+        peripherals.RCC.apb2enr.modify(|_, w| w.iopben().enabled());
+        peripherals.RCC.apb2enr.modify(|_, w| w.afioen().enabled());
+
+        let [
+            // PA0 is hall encoder
+            hall_pin,
+            // PA1 is left
+            left_btn,
+            // PA2 is right
+            right_btn,
+            // PA3 is fast
+            fast_btn,
+            // PA4 is led
+            led_pin,
+            // PA5 is encoder button
+            encoder_btn,
+            // PA6 is DT
+            encoder_dt_pin,
+            // PA7 is CLK
+            encoder_clk_pin,
+            // PA8 is step
+            step_pin,
+            // PA9 is dir
+            dir_pin,
+            // PA10 is enable
+            enable_pin,
+            // PA11 is reset
+            reset_pin,
+            pa12,
+            pa13,
+            pa14,
+            pa15,
+        ] = peripherals.GPIOA.into_bitband();
+
+        let [
+            estop,
+            // PB1 is RS
+            rs_pin,
+            pb2,
+            pb3,
+            pb4,
+            pb5,
+            pb6,
+            pb7,
+            pb8,
+            pb9,
+            // PB10 is RW
+            rw_pin,
+            // PB11 is E
+            e_pin,
+            // PB12-PB15 are DB4-DB7
+            db4,
+            db5,
+            db6,
+            db7,
+        ] = peripherals.GPIOB.into_bitband();
+        passivate([pa12, pa13, pa14, pa15, pb2, pb3, pb4, pb5, pb6, pb7, pb8, pb9]);
+
+        estop.config().floating();
+
+        // Initialize peripherals
+        let driver = StepperDriverImpl::new(peripherals.TIM1, step_pin, dir_pin, enable_pin, reset_pin);
+        let led = Led::new(led_pin);
+        let screen = Screen::new(rs_pin, rw_pin, e_pin, [db4, db5, db6, db7]);
+        let encoder = QuadEncoder::new(peripherals.TIM3, encoder_dt_pin, encoder_clk_pin);
+        let hall = RpmSensor::new(peripherals.TIM2, hall_pin);
+        let stepper = Stepper::new(DRIVER_TICK_FREQUENCY, driver);
+        let mut display = Display::new(screen);
+        let controls = Controls::new(left_btn, right_btn, fast_btn, encoder_btn);
+
+        // Initialize EEPROM emulation
+        peripherals.FLASH.eeprom().init().unwrap();
+        let flash = peripherals.FLASH;
+
+        // LCD device init
+        // Need to wait at least 40ms after Vcc rises to 2.7V
+        // STM32 could start much earlier than that
+        delay::ms(50);
+
+        crate::init_display(&mut display);
+        (
+            Shared { stepper, hall },
+            Local {
+                flash,
+                display,
+                led,
+                encoder,
+                controls,
+                estop,
+            },
+            init::Monotonics(),
+        )
+    }
+
+    #[idle(local = [led, encoder, controls, display, flash, estop], shared = [stepper, hall])]
+    fn idle(context: idle::Context) -> ! {
+        let mut r = MenuResources {
+            encoder: context.local.encoder,
+            display: context.local.display,
+            controls: context.local.controls,
+            flash: context.local.flash,
+            shared: context.shared,
+            estop: context.local.estop,
+        };
+
+        let mut menu = MainMenu::new();
+        loop {
+            menu.run(&mut r);
         }
-    },
+    }
+
+    fn passivate<const T: usize>(pins: [Pin; T]) {
+        for pin in pins {
+            pin.config().input().pull_up_down();
+            pin.on();
+        }
+    }
+
+    // fn passivate(gpioa: &mut GPIOA, gpiob: &mut GPIOB) {
+    //     // Pull down remaining inputs on GPIOA and GPIOB
+    //     // PA12
+    //     gpioa.brr.write(|w| w
+    //       .br12().set_bit());
+    //     gpioa.crh.modify(|_, w| w
+    //       .mode12().input().cnf12().bits(0b10)
+    //     );
+    //
+    //     // PB5, PB6, PB7, PB8, PB9
+    //     gpiob.brr.write(|w| w
+    //       .br5().set_bit()
+    //       .br6().set_bit()
+    //       .br7().set_bit()
+    //       .br8().set_bit()
+    //       .br9().set_bit());
+    //     gpiob.crl.modify(|_, w| w
+    //       .mode5().input().cnf5().bits(0b10)
+    //       .mode6().input().cnf6().bits(0b10)
+    //       .mode7().input().cnf7().bits(0b10)
+    //     );
+    //
+    //     gpiob.crh.modify(|_, w| w
+    //       .mode8().input().cnf8().bits(0b10)
+    //       .mode9().input().cnf9().bits(0b10)
+    //     );
+    // }
+
+    #[task(binds = TIM1_UP, priority = 16, shared = [stepper])]
+    fn step_completed(mut ctx: step_completed::Context) {
+        ctx.shared.stepper.lock(|s| s.interrupt())
+    }
+
+    #[task(binds = TIM2, priority = 1, shared = [hall])]
+    fn hall_interrupt(mut ctx: hall_interrupt::Context) {
+        ctx.shared.hall.lock(|h| h.interrupt());
+    }
 }
 
-fn passivate(gpioa: &GPIOA, gpiob: &GPIOB) {
-    // Pull down remaining inputs on GPIOA and GPIOB
-    // PA12
-    gpioa.brr.write(|w| w
-        .br12().set_bit());
-    gpioa.crh.modify(|_, w| w
-        .mode12().input().cnf12().bits(0b10)
-    );
-
-    // PB5, PB6, PB7, PB8, PB9
-    gpiob.brr.write(|w| w
-        .br5().set_bit()
-        .br6().set_bit()
-        .br7().set_bit()
-        .br8().set_bit()
-        .br9().set_bit());
-    gpiob.crl.modify(|_, w| w
-        .mode5().input().cnf5().bits(0b10)
-        .mode6().input().cnf6().bits(0b10)
-        .mode7().input().cnf7().bits(0b10)
-    );
-
-    gpiob.crh.modify(|_, w| w
-        .mode8().input().cnf8().bits(0b10)
-        .mode9().input().cnf9().bits(0b10)
-    );
-}
-
-fn init(p: init::Peripherals, r: init::Resources) {
-    clock::setup(p.RCC, p.SYST, p.FLASH);
-
-    // Enable peripherals
-    p.RCC.apb1enr.modify(|_, w| w.tim2en().enabled());
-    p.RCC.apb1enr.modify(|_, w| w.tim3en().enabled());
-    p.RCC.apb2enr.modify(|_, w| w.tim1en().enabled());
-    p.RCC.apb2enr.modify(|_, w| w.iopaen().enabled());
-    p.RCC.apb2enr.modify(|_, w| w.iopben().enabled());
-    p.RCC.apb2enr.modify(|_, w| w.afioen().enabled());
-
-    // Initialize peripherals
-    r.DRIVER.init();
-    r.LED.init();
-    r.SCREEN.init();
-    r.ENCODER.init();
-
-    r.CONTROLS.init();
-    r.HALL.init();
-
-    // Disable unused inputs
-    passivate(p.GPIOA, p.GPIOB);
-
-    // Initialize EEPROM emulation
-    p.FLASH.eeprom().init().unwrap();
-
-    // LCD device init
-    // Need to wait at least 40ms after Vcc rises to 2.7V
-    // STM32 could start much earlier than that
-    delay::ms(50);
-
-    let mut lcd = Display::new(r.SCREEN);
-    init_screen(&mut lcd);
-}
-
-fn init_screen(lcd: &mut config::Display) {
+fn init_display(lcd: &mut Display) {
     lcd.init(lcd::FunctionLine::Line2, lcd::FunctionDots::Dots5x8);
-    lcd.display(lcd::DisplayMode::DisplayOn, lcd::DisplayCursor::CursorOff, lcd::DisplayBlink::BlinkOff);
+    lcd.display(
+        lcd::DisplayMode::DisplayOn,
+        lcd::DisplayCursor::CursorOff,
+        lcd::DisplayBlink::BlinkOff,
+    );
     font::upload_characters(lcd);
-    lcd.entry_mode(lcd::EntryModeDirection::EntryRight, lcd::EntryModeShift::NoShift);
+    lcd.entry_mode(
+        lcd::EntryModeDirection::EntryRight,
+        lcd::EntryModeShift::NoShift,
+    );
 }
 
+#[inline(never)]
+#[panic_handler]
+pub fn begin_panic_handler(info: &PanicInfo<'_>) -> ! {
+    // Immediately disable driver outputs
+    let gpioa = unsafe { Peripherals::steal().GPIOA };
+    let [ _, _, _, _, _, _, _, _, _, _, enable, _, _, _, _, _ ] = gpioa.into_bitband();
+    enable.write(false);
 
-fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
-    let mut menu = MainMenu::new();
-    loop {
-        menu.run(t, &mut r);
-    }
-}
-
-fn step_completed(_t: &mut Threshold, r: TIM1_UP_TIM10::Resources) {
-    if r.DRIVER.interrupt() {
-        let driver: &mut StepperDriverResource = r.DRIVER;
-        r.STEPPER.step_completed(driver)
-    }
-}
-
-fn hall_interrupt(_t: &mut Threshold, r: TIM2::Resources) {
-    r.HALL.interrupt();
-}
-
-#[no_mangle]
-#[lang = "panic_fmt"]
-pub unsafe extern "C" fn panic_fmt(args: ::core::fmt::Arguments, _file: &'static str, line: u32, column: u32) -> ! {
-    // Immediately disable driver outputs, do it without claiming the driver
-    let gpioa = &(*stm32f103xx::GPIOA.get());
-    gpioa.write_pin(DRIVER_ENABLE_PIN, false);
+    // Steal GPIOB and create another screen in an attempt to print some info
+    let gpiob = unsafe { Peripherals::steal().GPIOB };
+    let [ _, rs_pin, _, _, _, _, _, _, _, _, rw_pin, e_pin, db4, db5, db6, db7, ] = gpiob.into_bitband();
+    let screen = Screen::new(rs_pin, rw_pin, e_pin, [db4, db5, db6, db7]);
+    let mut display = Display::new(screen);
 
     // Print reason on the display
     use core::fmt::Write;
-    let screen = config::screen();
-    let mut lcd = Display::new(&screen);
-    init_screen(&mut lcd);
-    lcd.position(0, 0);
-    lcd.write_fmt(args).unwrap();
-    lcd.position(0, 1);
-    write!(lcd, "{}:{}                ", line, column).unwrap();
+    init_display(&mut display);
+    display.position(0, 0);
+    write!(display, "{}", info).unwrap();
+    display.position(0, 1);
+    if let Some(loc) = info.location() {
+        write!(display, "{}:{}                ", loc.line(), loc.column()).unwrap();
+    }
 
     loop {
-        cortex_m::asm::nop();
+        cortex_m::asm::wfi();
     }
 }

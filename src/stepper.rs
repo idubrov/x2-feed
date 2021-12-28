@@ -1,6 +1,6 @@
 use stepgen;
 
-use hal::StepperDriver;
+use crate::hal::StepperDriver;
 use core;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -32,8 +32,9 @@ impl From<stepgen::Error> for Error {
     }
 }
 
-pub struct Stepper {
+pub struct Stepper<S: StepperDriver> {
     stepgen: stepgen::Stepgen,
+    driver: S,
     reversed: bool,
 
     base_step: u32,
@@ -48,9 +49,10 @@ fn round16_8(delay: u32) -> u16 {
     d as u16
 }
 
-impl Stepper {
-    pub const fn new(freq: u32) -> Stepper {
+impl<S: StepperDriver> Stepper<S> {
+    pub fn new(freq: u32, driver: S) -> Stepper<S> {
         Stepper {
+            driver,
             stepgen: stepgen::Stepgen::new(freq),
             reversed: false,
             base_step: 0,
@@ -81,27 +83,31 @@ impl Stepper {
     }
 
     /// Returns `false` no new delay was loaded
-    fn preload_delay(&mut self, driver: &mut StepperDriver) {
+    fn preload_delay(&mut self) {
         match self.stepgen.next() {
-            Some(delay) => driver.preload_delay(round16_8(delay)),
+            Some(delay) => self.driver.preload_delay(round16_8(delay)),
             None => {
                 if let State::Running(dir) = self.state {
                     self.state = State::Stopping(dir);
                 }
-                driver.set_last()
-            },
+                self.driver.set_last()
+            }
         }
     }
 
-    pub fn step_completed(&mut self, driver: &mut StepperDriver) {
+    pub fn interrupt(&mut self) {
+        if !self.driver.interrupt() {
+            return;
+        }
+
         match self.state {
             State::StopRequested(dir) => {
                 // Initiate stopping sequence -- set target step to 0
                 self.stepgen.set_target_step(0).unwrap();
                 self.state = State::Stopping(dir)
-            },
-            State::Stopping(dir) if !driver.is_running() => {
-                driver.set_enable(false);
+            }
+            State::Stopping(dir) if !self.driver.is_running() => {
+                self.driver.set_enable(false);
                 self.state = State::Stopped;
 
                 // Update internal position counter. We do it at the end to reduce amount of work
@@ -109,13 +115,12 @@ impl Stepper {
                 // in one direction).
                 self.update_position(dir);
                 return; // Do not preload the delay -- we are stopped now
-            },
-            State::Stopped =>
-                panic!("Should not receive interrupts when stopped!"),
+            }
+            State::Stopped => panic!("Should not receive interrupts when stopped!"),
             // Nothing otherwise, just preload the delay
-            _ => ()
+            _ => (),
         };
-        self.preload_delay(driver);
+        self.preload_delay();
     }
 
     // Incorporate outstanding steps from the stepgen into current position
@@ -138,7 +143,7 @@ impl Stepper {
 
     /// Move to given position. Note that no new move commands will be accepted while stepper is
     /// running. However, other target parameter, target speed, could be changed any time.
-    pub fn move_to(&mut self, driver: &mut StepperDriver, target: i32) -> Result {
+    pub fn move_to(&mut self, target: i32) -> Result {
         if self.state != State::Stopped {
             return Err(Error::NotStopped);
         }
@@ -152,21 +157,21 @@ impl Stepper {
         let dir = delta > 0;
 
         self.state = State::Running(dir);
-        self.stepgen.set_target_step(self.base_step + (delta.abs() as u32))?;
+        self.stepgen
+            .set_target_step(self.base_step + (delta.abs() as u32))?;
 
         // Set direction and enable driver outputs
-        driver.set_direction(dir != self.reversed);
-        driver.set_enable(true);
+        self.driver.set_direction(dir != self.reversed);
+        self.driver.set_enable(true);
 
         // Start pulse generation
         let delay = self.stepgen.next().unwrap();
-        driver.start(round16_8(delay));
+        self.driver.start(round16_8(delay));
 
         // Immediately preload the second delay
-        self.preload_delay(driver);
+        self.preload_delay();
         Ok(())
     }
-
 
     pub fn stop(&mut self) {
         if let State::Running(dir) = self.state {
@@ -186,5 +191,4 @@ impl Stepper {
             self.position
         }
     }
-
 }
