@@ -1,4 +1,4 @@
-target remote :3333
+#target remote :3333
 monitor arm semihosting enable
 # if using ITM
 # monitor tpiu config internal itm.fifo uart off 8000000

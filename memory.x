@@ -1,7 +1,12 @@
+_page_size = 1K;
+_eeprom_pages = 20;
+
 MEMORY
 {
-  FLASH : ORIGIN = 0x08000000, LENGTH = 64K
+  FLASH : ORIGIN = 0x08000000, LENGTH = 64K - (_eeprom_pages * _page_size)
   RAM : ORIGIN = 0x20000000, LENGTH = 20K
+  EEPROM : ORIGIN = ORIGIN(FLASH) + LENGTH(FLASH), LENGTH = (_eeprom_pages * _page_size)
 }
 
-INCLUDE eeprom.x;
+_eeprom_start = ORIGIN(EEPROM);
+_eeprom_end = ORIGIN(EEPROM) + LENGTH(EEPROM);

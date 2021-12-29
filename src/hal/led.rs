@@ -1,31 +1,22 @@
-use bare_metal::Peripheral;
-use stm32f103xx::gpioa;
-use core::ops::Deref;
-use stm32_hal::gpio::Port;
+use stm32_hal::gpio::Pin;
 
-
-pub struct Led<Port: 'static> {
-    port: Peripheral<Port>,
-    pin: usize
+pub struct Led {
+    pin: Pin,
 }
-unsafe impl <Port> Send for Led<Port> { }
 
-impl <Port> Led<Port> where Port: Deref<Target = gpioa::RegisterBlock> {
-    pub const fn new(port: Peripheral<Port>, pin: usize) -> Led<Port> {
-        Led { port, pin }
+impl Led {
+    pub fn new(pin: Pin) -> Led {
+        let led = Led { pin };
+        led.init();
+        led
     }
 
-    pub fn init(&self) {
-        let port = self.port();
-        port.pin_config(self.pin).open_drain().output2();
-        port.write_pin(self.pin, true); // off
+    fn init(&self) {
+        self.pin.config().output2();
+        self.pin.write(true); // off
     }
 
     pub fn set(&self, on: bool) {
-        self.port().write_pin(self.pin, !on);
-    }
-
-    fn port(&self) -> &Port {
-        unsafe { &*self.port.get() }
+        self.pin.write(!on);
     }
 }
