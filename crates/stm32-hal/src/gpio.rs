@@ -4,7 +4,7 @@ pub struct PinT<R> {
     pub(crate) pin: u8,
 }
 
-unsafe impl <R> Send for PinT<R> {}
+unsafe impl<R> Send for PinT<R> {}
 
 impl<R> PinT<R> {
     /// Safety: port pointer must be valid and should have an exclusive ownership of a given pin.

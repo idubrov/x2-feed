@@ -3,16 +3,23 @@ use stepgen;
 use crate::hal::StepperDriver;
 use core;
 
+/// Direction of stepper motor movement
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Direction {
+    Left,
+    Right,
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum State {
     /// Not stepping
     Stopped,
     /// Stepping and stop command was requested
-    StopRequested(bool),
+    StopRequested(Direction),
     /// Stopping the motor
-    Stopping(bool),
+    Stopping(Direction),
     /// Stepper motor is running
-    Running(bool),
+    Running(Direction),
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -77,7 +84,7 @@ impl<S: StepperDriver> Stepper<S> {
     /// stepper motor would only reach this speed if destination step is far enough, so there is
     /// enough time for deceleration.
     ///
-    /// * `speed` - target slew speed to reach, in steps per second, 24.8 format
+    /// * `speed` - target slew speed to reach, in (micro-)steps per second, 24.8 format
     pub fn set_speed(&mut self, speed: u32) -> Result {
         Ok(self.stepgen.set_target_speed(speed)?)
     }
@@ -124,20 +131,19 @@ impl<S: StepperDriver> Stepper<S> {
     }
 
     // Incorporate outstanding steps from the stepgen into current position
-    fn update_position(&mut self, dir: bool) {
+    fn update_position(&mut self, dir: Direction) {
         let step_pos = self.calc_position(dir);
         self.base_step = step_pos.0;
         self.position = step_pos.1;
     }
 
     // Compute current position based on stepgen step + last position
-    fn calc_position(&self, dir: bool) -> (u32, i32) {
+    fn calc_position(&self, dir: Direction) -> (u32, i32) {
         let step = self.stepgen.current_step();
         let offset = (step - self.base_step) as i32;
-        if dir {
-            (step, self.position + offset)
-        } else {
-            (step, self.position - offset)
+        match dir {
+            Direction::Left => (step, self.position - offset),
+            Direction::Right => (step, self.position + offset),
         }
     }
 
@@ -154,14 +160,22 @@ impl<S: StepperDriver> Stepper<S> {
         }
 
         let delta = target - self.position;
-        let dir = delta > 0;
+        let dir = if delta > 0 {
+            Direction::Right
+        } else {
+            Direction::Left
+        };
 
         self.state = State::Running(dir);
         self.stepgen
             .set_target_step(self.base_step + (delta.abs() as u32))?;
 
         // Set direction and enable driver outputs
-        self.driver.set_direction(dir != self.reversed);
+        let dir_bit = match dir {
+            Direction::Left => self.reversed,
+            Direction::Right => !self.reversed,
+        };
+        self.driver.set_direction(dir_bit);
         self.driver.set_enable(true);
 
         // Start pulse generation

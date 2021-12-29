@@ -16,10 +16,10 @@
 //! # PCB
 //! See PCB (Eagle CAD) in the [pcb/](pcb/) directory.
 
+use crate::hal::{Display, Screen};
 use core::panic::PanicInfo;
 use stm32_hal::gpio::Port;
 use stm32f1::stm32f103::Peripherals;
-use crate::hal::{Display, Screen};
 
 mod config;
 mod font;
@@ -30,7 +30,10 @@ mod stepper;
 
 #[rtic::app(device = stm32f1::stm32f103, peripherals = true)]
 mod app {
-    use crate::hal::{clock, Controls, RpmSensor, delay, DRIVER_TICK_FREQUENCY, Display, Screen, Led, QuadEncoder, StepperDriverImpl};
+    use crate::hal::{
+        clock, delay, Controls, Display, Led, QuadEncoder, RpmSensor, Screen, StepperDriverImpl,
+        DRIVER_TICK_FREQUENCY,
+    };
     use crate::menu::{MainMenu, MenuItem, MenuResources};
     use crate::stepper::Stepper;
     use eeprom::EEPROM;
@@ -121,12 +124,15 @@ mod app {
             db6,
             db7,
         ] = peripherals.GPIOB.into_bitband();
-        passivate([pa12, pa13, pa14, pa15, pb2, pb3, pb4, pb5, pb6, pb7, pb8, pb9]);
+        passivate([
+            pa12, pa13, pa14, pa15, pb2, pb3, pb4, pb5, pb6, pb7, pb8, pb9,
+        ]);
 
         estop.config().floating();
 
         // Initialize peripherals
-        let driver = StepperDriverImpl::new(peripherals.TIM1, step_pin, dir_pin, enable_pin, reset_pin);
+        let driver =
+            StepperDriverImpl::new(peripherals.TIM1, step_pin, dir_pin, enable_pin, reset_pin);
         let led = Led::new(led_pin);
         let screen = Screen::new(rs_pin, rw_pin, e_pin, [db4, db5, db6, db7]);
         let encoder = QuadEncoder::new(peripherals.TIM3, encoder_dt_pin, encoder_clk_pin);
@@ -170,7 +176,7 @@ mod app {
             estop: context.local.estop,
         };
 
-        let mut menu = MainMenu::new();
+        let mut menu = MainMenu::new(&mut r);
         loop {
             menu.run(&mut r);
         }
@@ -241,12 +247,13 @@ fn init_display(lcd: &mut Display) {
 pub fn begin_panic_handler(info: &PanicInfo<'_>) -> ! {
     // Immediately disable driver outputs
     let gpioa = unsafe { Peripherals::steal().GPIOA };
-    let [ _, _, _, _, _, _, _, _, _, _, enable, _, _, _, _, _ ] = gpioa.into_bitband();
+    let [_, _, _, _, _, _, _, _, _, _, enable, _, _, _, _, _] = gpioa.into_bitband();
     enable.write(false);
 
     // Steal GPIOB and create another screen in an attempt to print some info
     let gpiob = unsafe { Peripherals::steal().GPIOB };
-    let [ _, rs_pin, _, _, _, _, _, _, _, _, rw_pin, e_pin, db4, db5, db6, db7, ] = gpiob.into_bitband();
+    let [_, rs_pin, _, _, _, _, _, _, _, _, rw_pin, e_pin, db4, db5, db6, db7] =
+        gpiob.into_bitband();
     let screen = Screen::new(rs_pin, rw_pin, e_pin, [db4, db5, db6, db7]);
     let mut display = Display::new(screen);
 

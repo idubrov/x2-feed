@@ -38,9 +38,16 @@ impl Setting {
     }
 }
 
+// Currently not configurable
+pub const STEPS_PER_ROTATION: u32 = 200;
 pub const IS_LATHE: Setting = Setting::new(0x01, 0, 0, 1);
 pub const IS_REVERSED: Setting = Setting::new(0x02, 0, 0, 1);
 pub const MICROSTEPS: Setting = Setting::new(0x03, 16, 1, 125);
 pub const PITCH: Setting = Setting::new(0x04, 16, 1, 32);
 pub const MAX_IPM: Setting = Setting::new(0x05, 30, 1, 30);
 pub const ACCELERATION: Setting = Setting::new(0x06, 1200, 200, 2400); // Steps per second per second
+
+/// Read settings and calculate how many steps do we make per inch
+pub fn steps_per_inch(flash: &FLASH) -> u32 {
+    u32::from(PITCH.read(flash)) * u32::from(MICROSTEPS.read(flash)) * STEPS_PER_ROTATION
+}

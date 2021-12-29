@@ -9,11 +9,7 @@ pub struct QuadEncoder {
 
 impl QuadEncoder {
     pub fn new(tim3: TIM3, dt: Pin, clk: Pin) -> QuadEncoder {
-        let encoder = QuadEncoder {
-            tim3,
-            dt,
-            clk,
-        };
+        let encoder = QuadEncoder { tim3, dt, clk };
         encoder.init();
         encoder
     }

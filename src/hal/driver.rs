@@ -49,13 +49,7 @@ pub struct StepperDriverImpl {
 }
 
 impl StepperDriverImpl {
-    pub fn new(
-        tim1: TIM1,
-        step: Pin,
-        dir: Pin,
-        enable: Pin,
-        reset: Pin,
-    ) -> StepperDriverImpl {
+    pub fn new(tim1: TIM1, step: Pin, dir: Pin, enable: Pin, reset: Pin) -> StepperDriverImpl {
         let mut driver = StepperDriverImpl {
             tim1,
             step,
@@ -75,11 +69,7 @@ impl StepperDriverImpl {
         self.enable.write(false);
         self.reset.write(false); // Start in reset mode
 
-        self.step
-            .config()
-            .output50()
-            .open_drain()
-            .alternate();
+        self.step.config().output50().open_drain().alternate();
         self.dir.config().output50().open_drain();
         self.enable.config().output50().open_drain();
         self.reset.config().output50().open_drain();

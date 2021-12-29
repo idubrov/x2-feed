@@ -4,8 +4,10 @@ use crate::settings;
 use core::fmt::Write;
 use stm32_hal::gpio::Pin;
 
+/// Run composite menu (menu consisting of menu items)
 pub fn run_menu(items: &mut [&mut dyn MenuItem], r: &mut MenuResources) {
     if let Some(def) = items.iter().position(|item| item.is_active_by_default(r)) {
+        // If we have default menu item, we enter it immediately
         items[def].run(r);
     }
 
@@ -17,8 +19,8 @@ pub fn run_menu(items: &mut [&mut dyn MenuItem], r: &mut MenuResources) {
         r.encoder.set_limit(items.len() as u16);
 
         r.display.clear();
-        loop {
-            selected = r.encoder.current() as usize;
+        'inner: loop {
+            selected = usize::from(r.encoder.current());
             let current: &mut dyn MenuItem = items[selected];
 
             let event = r.controls.read_event();
@@ -26,7 +28,7 @@ pub fn run_menu(items: &mut [&mut dyn MenuItem], r: &mut MenuResources) {
                 Some(NavStatus::Exit) => return,
                 Some(NavStatus::Select) => {
                     current.run(r);
-                    break;
+                    break 'inner;
                 }
                 _ => {}
             }
@@ -62,16 +64,16 @@ pub fn run_setting(setting: &settings::Setting, label: &'static str, r: &mut Men
 }
 
 macro_rules! menu {
-    ($name:ident, $label: expr, { $( $item:ident ( $($params:expr),* ) ),* }) => {
+    ($name:ident, $label: expr, { $( $item:ident ( $($params:expr),* $(,)? ) ),* $(,)? }) => {
         #[allow(non_snake_case)]
         pub struct $name {
             $($item: $item),*
         }
 
         impl $name {
-            pub fn new() -> Self {
+            pub fn new(r: &mut crate::menu::MenuResources) -> Self {
                 Self {
-                    $( $item: $item::new( $($params),* ) ),*
+                    $( $item: $item::new( r, $($params),* ) ),*
                 }
             }
         }
@@ -87,7 +89,7 @@ macro_rules! menu {
                 write!(f, "{: <16}", $label)
             }
         }
-    }
+    };
 }
 
 macro_rules! menu_setting {
@@ -96,7 +98,7 @@ macro_rules! menu_setting {
         pub struct $name;
 
         impl $name {
-            pub fn new() -> Self {
+            pub fn new(_r: &mut crate::menu::MenuResources) -> Self {
                 Self {}
             }
         }

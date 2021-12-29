@@ -1,4 +1,4 @@
-use crate::hal::{Button, Event, Display, QuadEncoder, STEPS_PER_ROTATION};
+use crate::hal::{Button, Display, Event, QuadEncoder};
 use crate::menu::util::{NavStatus, Navigation};
 use crate::menu::{steputil, MenuResources};
 use crate::settings;
@@ -55,14 +55,20 @@ impl<'a> Drop for EncoderDelta<'a> {
     }
 }
 
-fn print_limit(lcd: &mut Display, position: Option<i32>, steps_per_inch: u32) -> fmt::Result {
+fn print_limit(lcd: &mut Display, position: Option<i32>, steps_per_inch: i32) -> fmt::Result {
     match position {
         None => {
             write!(lcd, "Not set")
         }
-        Some(position) => {
-            let thousands =
-                (1000 * position + (steps_per_inch as i32) / 2) / (steps_per_inch as i32);
+        Some(steps) => {
+            // Divide with rounding
+            // FIXME: utility
+            let bias = if steps < 0 {
+                -steps_per_inch / 2
+            } else {
+                steps_per_inch / 2
+            };
+            let thousands = (1000 * steps + bias) / (steps_per_inch as i32);
             let inches = thousands / 1000;
             let thousands = thousands % 1000;
             write!(lcd, "{}.{:0>3}", inches, thousands.abs())
@@ -76,9 +82,7 @@ pub fn capture_limit(r: &mut MenuResources, label: &'static str) -> (Option<i32>
     let mut nav = Navigation::new();
 
     // Pre-compute steps-per-inch
-    let steps_per_inch = u32::from(settings::PITCH.read(r.flash))
-        * u32::from(settings::MICROSTEPS.read(r.flash))
-        * STEPS_PER_ROTATION;
+    let steps_per_inch = settings::steps_per_inch(r.flash) as i32;
 
     loop {
         let pos = r.shared.stepper.lock(|s| s.position());
@@ -92,22 +96,31 @@ pub fn capture_limit(r: &mut MenuResources, label: &'static str) -> (Option<i32>
         r.display.position(0, 1);
         print_limit(&mut r.display, Some(pos), steps_per_inch).unwrap();
 
-        // Update stepper position
+        // Update stepper position; unit is one thou
         if delta != 0 {
+            // FIXME: hard-coded speed?...
             let speed = ((10 * steps_per_inch) << 8) / 60;
             // FIXME: Traversal speed?
-            r.shared.stepper.lock(|s| s.set_speed(speed)).unwrap();
-            steputil::move_delta(delta * (steps_per_inch as i32) / 1000, &mut r.shared);
+            r.shared
+                .stepper
+                .lock(|s| s.set_speed(speed as u32))
+                .unwrap();
+            steputil::move_delta(delta * steps_per_inch / 1000, &mut r.shared);
             // FIXME: print "MOVING..."
             steputil::wait_stopped(&mut r.shared);
         }
 
-        // Update limit
-        if let Event::Pressed(Button::Fast) = event {
-            limit = match limit {
-                Some(limit) if limit == pos => None,
-                _ => Some(pos),
-            };
+        match event {
+            Event::Pressed(Button::Fast) if limit == Some(pos) => {
+                limit = None;
+            }
+            Event::Pressed(Button::Fast) => {
+                limit = Some(pos);
+            }
+            Event::Pressed(Button::Left) => {
+                // FIXME: feed...
+            }
+            _ => {}
         }
 
         if let Some(status) = nav.check(r.estop, event) {

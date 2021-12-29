@@ -1,9 +1,9 @@
-use self::feed::FeedMenu;
+use self::feed::FeedMenuItem;
+use crate::hal::{Controls, Display, QuadEncoder};
 use crate::settings;
 use core::fmt;
-use stm32f1::stm32f103::FLASH;
 use stm32_hal::gpio::Pin;
-use crate::hal::{Controls, Display, QuadEncoder};
+use stm32f1::stm32f103::FLASH;
 
 pub struct MenuResources<'a> {
     pub encoder: &'a mut QuadEncoder,
@@ -45,6 +45,6 @@ menu!(SettingsMenu, "Settings", {
 });
 
 menu!(MainMenu, "Main", {
-    FeedMenu(true),
+    FeedMenuItem(),
     SettingsMenu()
 });

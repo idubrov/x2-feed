@@ -7,8 +7,6 @@ mod led;
 mod rpm;
 mod screen;
 
-pub const STEPS_PER_ROTATION: u32 = 200;
-
 pub use self::clock::FREQUENCY;
 pub use self::controls::{Button, Controls, ControlsState, Event};
 pub use self::driver::DRIVER_TICK_FREQUENCY;

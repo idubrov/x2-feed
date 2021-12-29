@@ -9,12 +9,7 @@ pub struct Screen {
 
 impl Screen {
     pub fn new(rs: Pin, rw: Pin, e: Pin, data: [Pin; 4]) -> Screen {
-        let screen = Screen {
-            rs,
-            rw,
-            e,
-            data,
-        };
+        let screen = Screen { rs, rw, e, data };
         screen.init();
         screen
     }
