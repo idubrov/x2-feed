@@ -92,8 +92,8 @@ impl RpmSensor {
         });
     }
 
-    /// Check for pending interrupt and handle it (reset pending flag). Returns `true` if interrupt
-    /// was pending.
+    /// Check for pending interrupt and handle it (reset pending flag). Returns `true` if captured
+    /// signal from hall sensor.
     pub fn interrupt(&mut self) -> bool {
         if self.tim2.sr.read().cc1if().bit_is_set() {
             // FIXME: check if we can get away with write...
@@ -134,7 +134,7 @@ impl RpmSensor {
             if self.msb >= MAX_MSB {
                 self.captured = 0;
             }
-            true
+            false
         } else {
             false
         }

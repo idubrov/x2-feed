@@ -19,7 +19,15 @@ pub enum State {
     /// Stopping the motor
     Stopping(Direction),
     /// Stepper motor is running
-    Running(Direction),
+    Running {
+        dir: Direction,
+        /// If chasing the thread
+        is_cutting_thread: bool,
+    },
+    /// Awaiting for the spindle sync event to initiate thread cutting
+    ThreadStart,
+    /// Awaiting for the delay before we start accelerating our stepper
+    ThreadDelay,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -41,6 +49,7 @@ impl From<stepgen::Error> for Error {
 
 pub struct Stepper<S: StepperDriver> {
     stepgen: stepgen::Stepgen,
+    threads: crate::threads::ThreadInfo,
     driver: S,
     reversed: bool,
 
@@ -61,6 +70,7 @@ impl<S: StepperDriver> Stepper<S> {
         Stepper {
             driver,
             stepgen: stepgen::Stepgen::new(freq),
+            threads: crate::threads::ThreadInfo::new(freq),
             reversed: false,
             base_step: 0,
             position: 0,
@@ -75,7 +85,9 @@ impl<S: StepperDriver> Stepper<S> {
 
     /// Set new acceleration (steps per second per second), in 24.8 format.
     pub fn set_acceleration(&mut self, acceleration: u32) -> Result {
-        Ok(self.stepgen.set_acceleration(acceleration)?)
+        self.stepgen.set_acceleration(acceleration)?;
+        self.threads.set_acceleration(acceleration);
+        Ok(())
     }
 
     /// Set slew speed (maximum speed stepper motor would run).
@@ -94,7 +106,7 @@ impl<S: StepperDriver> Stepper<S> {
         match self.stepgen.next() {
             Some(delay) => self.driver.preload_delay(round16_8(delay)),
             None => {
-                if let State::Running(dir) = self.state {
+                if let State::Running { dir, .. } = self.state {
                     self.state = State::Stopping(dir);
                 }
                 self.driver.set_last()
@@ -111,23 +123,38 @@ impl<S: StepperDriver> Stepper<S> {
             State::StopRequested(dir) => {
                 // Initiate stopping sequence -- set target step to 0
                 self.stepgen.set_target_step(0).unwrap();
-                self.state = State::Stopping(dir)
+                self.state = State::Stopping(dir);
+                self.preload_delay();
             }
             State::Stopping(dir) if !self.driver.is_running() => {
                 self.driver.set_enable(false);
                 self.state = State::Stopped;
+                // FIXME: reset thread cutting info
 
                 // Update internal position counter. We do it at the end to reduce amount of work
                 // we do per step (direction could not be changed while running, so all steps go
                 // in one direction).
                 self.update_position(dir);
-                return; // Do not preload the delay -- we are stopped now
+                // Do not preload the delay -- we are stopped now
+            }
+            State::Stopping(_) | State::Running { .. } => {
+                // Just preload the delay
+                self.preload_delay();
             }
             State::Stopped => panic!("Should not receive interrupts when stopped!"),
-            // Nothing otherwise, just preload the delay
-            _ => (),
+            State::ThreadStart => panic!("Should not receive interrupts when waiting for the spindle!"),
+            State::ThreadDelay if !self.driver.is_running() => {
+                // Finished our delay, need to initiate thread cutting
+                self.driver.set_timer_output(true);
+                self.move_to(self.position).unwrap();
+            }
+            State::ThreadDelay => {
+                match self.threads.next_wait_delay() {
+                    0 => self.driver.set_last(),
+                    delay => self.driver.preload_delay(delay),
+                }
+            }
         };
-        self.preload_delay();
     }
 
     // Incorporate outstanding steps from the stepgen into current position
@@ -150,7 +177,7 @@ impl<S: StepperDriver> Stepper<S> {
     /// Move to given position. Note that no new move commands will be accepted while stepper is
     /// running. However, other target parameter, target speed, could be changed any time.
     pub fn move_to(&mut self, target: i32) -> Result {
-        if self.state != State::Stopped {
+        if self.state != State::Stopped && self.state != State::ThreadDelay {
             return Err(Error::NotStopped);
         }
 
@@ -166,7 +193,10 @@ impl<S: StepperDriver> Stepper<S> {
             Direction::Left
         };
 
-        self.state = State::Running(dir);
+        self.state = State::Running {
+            dir,
+            is_cutting_thread: self.state == State::ThreadDelay,
+        };
         self.stepgen
             .set_target_step(self.base_step + (delta.abs() as u32))?;
 
@@ -188,7 +218,7 @@ impl<S: StepperDriver> Stepper<S> {
     }
 
     pub fn stop(&mut self) {
-        if let State::Running(dir) = self.state {
+        if let State::Running { dir, .. } = self.state {
             self.state = State::StopRequested(dir);
         }
     }
@@ -199,10 +229,58 @@ impl<S: StepperDriver> Stepper<S> {
     }
 
     pub fn position(&self) -> i32 {
-        if let State::Running(dir) = self.state {
+        if let State::Running { dir, .. } = self.state {
             self.calc_position(dir).1
         } else {
             self.position
         }
+    }
+
+    /// Move to given position. Note that no new move commands will be accepted while stepper is
+    /// running. However, other target parameter, target speed, could be changed any time.
+    pub fn thread_start(&mut self, target: i32, steps_per_thread: u32, estimated_rpm: u32) -> Result {
+        if self.state != State::Stopped {
+            return Err(Error::NotStopped);
+        }
+
+        self.threads.setup_thread_cutting(steps_per_thread, target, estimated_rpm);
+        let target_speed = self.threads.calculate_speed(estimated_rpm, 0);
+        self.stepgen.set_target_speed(target_speed)?;
+        self.state = State::ThreadStart;
+        Ok(())
+    }
+
+    /// Synchronize stepper driver with the spindle rotation
+    pub fn spindle_sync(&mut self, rpm: u32) {
+        match self.state {
+            State::ThreadStart => {
+                // Initiate timer-driven delay for thread cutting
+                self.driver.set_timer_output(false);
+                let delay = self.threads.next_wait_delay();
+                self.driver.start(delay);
+
+                // Preload the next delay
+                match self.threads.next_wait_delay() {
+                    0 => self.driver.set_last(),
+                    delay => self.driver.preload_delay(delay),
+                }
+                self.state = State::ThreadDelay;
+            }
+            State::Running { is_cutting_thread, .. } if is_cutting_thread => {
+                let step = self.stepgen.current_step();
+                let steps_since_start = step - self.base_step;
+                let target_speed = self.threads.calculate_speed(rpm, steps_since_start);
+                self.stepgen.set_target_speed(target_speed).unwrap();
+            }
+
+            _ => {
+                // Not cutting threads, do nothing
+            }
+        }
+    }
+
+    /// Get last out-of-phase error for thread cutting
+    pub fn last_error_degrees(&self) -> i32 {
+        self.threads.last_error_degrees()
     }
 }

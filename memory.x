@@ -1,5 +1,5 @@
 _page_size = 1K;
-_eeprom_pages = 20;
+_eeprom_pages = 10;
 
 MEMORY
 {

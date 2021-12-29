@@ -27,6 +27,7 @@ mod hal;
 mod menu;
 mod settings;
 mod stepper;
+mod threads;
 
 #[rtic::app(device = stm32f1::stm32f103, peripherals = true)]
 mod app {
@@ -174,6 +175,7 @@ mod app {
             flash: context.local.flash,
             shared: context.shared,
             estop: context.local.estop,
+            driver_freq: DRIVER_TICK_FREQUENCY,
         };
 
         let mut menu = MainMenu::new(&mut r);
@@ -189,42 +191,23 @@ mod app {
         }
     }
 
-    // fn passivate(gpioa: &mut GPIOA, gpiob: &mut GPIOB) {
-    //     // Pull down remaining inputs on GPIOA and GPIOB
-    //     // PA12
-    //     gpioa.brr.write(|w| w
-    //       .br12().set_bit());
-    //     gpioa.crh.modify(|_, w| w
-    //       .mode12().input().cnf12().bits(0b10)
-    //     );
-    //
-    //     // PB5, PB6, PB7, PB8, PB9
-    //     gpiob.brr.write(|w| w
-    //       .br5().set_bit()
-    //       .br6().set_bit()
-    //       .br7().set_bit()
-    //       .br8().set_bit()
-    //       .br9().set_bit());
-    //     gpiob.crl.modify(|_, w| w
-    //       .mode5().input().cnf5().bits(0b10)
-    //       .mode6().input().cnf6().bits(0b10)
-    //       .mode7().input().cnf7().bits(0b10)
-    //     );
-    //
-    //     gpiob.crh.modify(|_, w| w
-    //       .mode8().input().cnf8().bits(0b10)
-    //       .mode9().input().cnf9().bits(0b10)
-    //     );
-    // }
-
     #[task(binds = TIM1_UP, priority = 16, shared = [stepper])]
     fn step_completed(mut ctx: step_completed::Context) {
         ctx.shared.stepper.lock(|s| s.interrupt())
     }
 
-    #[task(binds = TIM2, priority = 1, shared = [hall])]
+    #[task(binds = TIM2, priority = 1, shared = [hall, stepper])]
     fn hall_interrupt(mut ctx: hall_interrupt::Context) {
-        ctx.shared.hall.lock(|h| h.interrupt());
+        let (captured, rpm) = ctx
+            .shared
+            .hall
+            .lock(|h: &mut RpmSensor| (h.interrupt(), h.rpm()));
+        if captured {
+            // We have captured hall sensor, update thread cutting logic
+            ctx.shared
+                .stepper
+                .lock(|s: &mut Stepper<StepperDriverImpl>| s.spindle_sync(rpm));
+        }
     }
 }
 

@@ -10,6 +10,7 @@ pub fn move_delta(delta: i32, r: &mut crate::app::idle::SharedResources) {
         .unwrap()
 }
 
+// FIXME: why not regular loop?
 pub fn wait_stopped(r: &mut crate::app::idle::SharedResources) {
     while r.stepper.lock(|s| {
         if let stepper::State::Stopped = s.state() {

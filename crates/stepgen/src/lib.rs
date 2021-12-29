@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![warn(missing_docs)]
 #![deny(warnings)]
 
@@ -267,6 +267,11 @@ impl Stepgen {
         }
     }
 
+    /// If we are running at target speed
+    pub fn is_at_speed(&self) -> bool {
+        self.slewing_delay != 0
+    }
+
     /// Returns '0' if should stop. Otherwise, returns timer delay in 24.8 format
     fn next_delay(&mut self) -> u32 {
         let target_step = self.target_step;
@@ -502,5 +507,56 @@ mod tests {
             Err(Error::SpeedAccelerationNotSet),
             stepgen.set_target_step(1_000_000_000)
         );
+    }
+
+    #[test]
+    fn boo() {
+        let mut stepgen: Stepgen = Stepgen::new(1_000_000);
+        // RPM is in 24.8 already
+        let steps_per_inch = 16 * 16 * 200;
+        let tpi = 16;
+        let steps_per_thread = steps_per_inch / tpi;
+        let rpm = 150 << 8;
+        let speed = rpm * steps_per_thread / 60;
+        let acceleration = (1200 * 16) << 8;
+        stepgen.set_acceleration(acceleration).unwrap();
+        stepgen.set_target_speed(speed).unwrap();
+        stepgen.set_target_step(1_000_000_000).unwrap();
+        while !stepgen.is_at_speed() {
+            let _delay = stepgen.next().unwrap();
+        }
+        let steps_to_accelerate = stepgen.current_step();
+        eprintln!("need steps: {}", steps_to_accelerate);
+        eprintln!("steps per revolution: {}", steps_per_thread);
+        let time_to_accelerate = (steps_to_accelerate as f64) / (speed as f64) * 256.0;
+        eprintln!("time to accelerate {}", time_to_accelerate);
+        eprintln!(
+            "revolutions {}",
+            time_to_accelerate * (rpm as f64) / 60.0 / 256.0
+        );
+        let revol0 = (steps_to_accelerate / steps_per_thread) + 1;
+        let start_at = revol0 * steps_per_thread - steps_to_accelerate;
+        eprintln!("need start at {}", start_at);
+        let delay = (start_at as f64) / ((steps_per_thread as f64) * (rpm as f64) / 60.0 / 256.0);
+        eprintln!("start at {} seconds", delay);
+        let initial_delay = 60
+            * 256
+            * 1_000_000
+            * u64::from(steps_per_thread - steps_to_accelerate % steps_per_thread)
+            / u64::from(steps_per_thread)
+            / u64::from(rpm);
+        eprintln!("{}", initial_delay);
+
+        // phase adjustment:
+        // 1. for revolution_0, use (steps_to_accelerate + phase)
+        // 2. for error, use (steps_to_accelerate + phase)
+
+        // once at revol0, check current position
+        // should be ~= steps_to_accelerate
+        // from that point, position should be
+        // steps_to_accelerate + (revolutions - revolutions_0) * steps_per_thread
+        // correct speed based on error!
+        // error = steps_to_accelerate + (revolutions - revolutions_0) * steps_per_thread - current_position;
+        // speed += error * rpm / 60.0
     }
 }

@@ -6,7 +6,10 @@ use stm32_hal::gpio::Pin;
 
 /// Run composite menu (menu consisting of menu items)
 pub fn run_menu(items: &mut [&mut dyn MenuItem], r: &mut MenuResources) {
-    if let Some(def) = items.iter().position(|item| item.is_active_by_default(r)) {
+    if let Some(def) = items
+        .iter()
+        .position(|item| item.is_enabled(r) && item.is_active_by_default(r))
+    {
         // If we have default menu item, we enter it immediately
         items[def].run(r);
     }
@@ -16,12 +19,21 @@ pub fn run_menu(items: &mut [&mut dyn MenuItem], r: &mut MenuResources) {
 
     loop {
         r.encoder.set_current(selected as u16);
-        r.encoder.set_limit(items.len() as u16);
+        let enabled_items = items.iter().filter(|item| item.is_enabled(r)).count() as u16;
+        r.encoder.set_limit(enabled_items);
 
         r.display.clear();
         'inner: loop {
             selected = usize::from(r.encoder.current());
-            let current: &mut dyn MenuItem = items[selected];
+            let index = items
+                .iter()
+                .enumerate()
+                .filter(|(_pos, item)| item.is_enabled(r))
+                .skip(selected)
+                .next()
+                .unwrap()
+                .0;
+            let current: &mut dyn MenuItem = items[index];
 
             let event = r.controls.read_event();
             match nav.check(&r.estop, event) {

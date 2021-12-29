@@ -116,10 +116,10 @@ impl FeedMenuItem {
 
         r.display.position(0, 1);
         let c = match (run_state, feed_speed) {
-            (StepperState::Running(Direction::Left), FeedSpeed::Slow) => font::LEFT,
-            (StepperState::Running(Direction::Right), FeedSpeed::Slow) => font::RIGHT,
-            (StepperState::Running(Direction::Left), FeedSpeed::Fast) => font::FAST_LEFT,
-            (StepperState::Running(Direction::Right), FeedSpeed::Fast) => font::FAST_RIGHT,
+            (StepperState::Running { dir: Direction::Left, .. }, FeedSpeed::Slow) => font::LEFT,
+            (StepperState::Running { dir: Direction::Right, .. }, FeedSpeed::Slow) => font::RIGHT,
+            (StepperState::Running { dir: Direction::Left, .. }, FeedSpeed::Fast) => font::FAST_LEFT,
+            (StepperState::Running { dir: Direction::Right, .. }, FeedSpeed::Fast) => font::FAST_RIGHT,
             _ => ' ',
         };
         write!(r.display, "{}{}", c, feed).unwrap();
@@ -175,16 +175,18 @@ impl FeedMenuItem {
             (StepperState::Stopped, Event::Pressed(Button::Left)) => {
                 // Use very low number for moving left
                 // FIXME: explicit support for -+INF?
-                move_to(r, self.limits.0.unwrap_or(-1_000_000_000));
+                let target = self.limits.0.unwrap_or(-1_000_000_000);
+                r.shared.stepper.lock(|s| s.move_to(target)).unwrap();
             }
 
             (StepperState::Stopped, Event::Pressed(Button::Right)) => {
                 // Use very high number for moving right
-                move_to(r, self.limits.1.unwrap_or(1_000_000_000));
+                let target = self.limits.1.unwrap_or(1_000_000_000);
+                r.shared.stepper.lock(|s| s.move_to(target)).unwrap();
             }
 
-            (StepperState::Running(Direction::Left), Event::Unpressed(Button::Left))
-            | (StepperState::Running(Direction::Right), Event::Unpressed(Button::Right)) => {
+            (StepperState::Running { dir: Direction::Left, .. }, Event::Unpressed(Button::Left))
+            | (StepperState::Running { dir: Direction::Right, .. }, Event::Unpressed(Button::Right)) => {
                 r.shared.stepper.lock(|s| s.stop())
             }
 
@@ -200,7 +202,7 @@ impl FeedMenuItem {
     }
 
     fn run_feed(&mut self, r: &mut MenuResources) -> NavStatus {
-        reload_stepper_settings(r);
+        r.reload_stepper_settings();
 
         // Pre-compute steps-per-inch
         let steps_per_inch = settings::steps_per_inch(&r.flash);
@@ -271,24 +273,6 @@ impl MenuItem for FeedMenuItem {
 
 impl fmt::Display for FeedMenuItem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("Feed (IPM)")
+        f.write_str("Feed")
     }
-}
-
-// Helper function to run stepper command. Claims both driver and stepper.
-fn move_to(r: &mut MenuResources, target: i32) {
-    r.shared.stepper.lock(|s| s.move_to(target)).unwrap()
-}
-
-// Reload stepper settings from EEPROM
-fn reload_stepper_settings(r: &mut MenuResources) {
-    let reversed = settings::IS_REVERSED.read(r.flash) != 0;
-    let acceleration = (u32::from(settings::ACCELERATION.read(r.flash))
-        * u32::from(settings::MICROSTEPS.read(r.flash)))
-        << 8;
-
-    r.shared.stepper.lock(|s| {
-        s.set_reversed(reversed);
-        s.set_acceleration(acceleration).unwrap();
-    });
 }

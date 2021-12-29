@@ -9,6 +9,10 @@ pub trait StepperDriver {
     /// Enable/disable driver outputs.
     fn set_enable(&mut self, enable: bool);
 
+    /// Enable/disable timer output channel. In thread cutting, we use timer for other purposes,
+    /// so we need a way to stop generating pulses.
+    fn set_timer_output(&mut self, enable: bool);
+
     /// Set stepper driver direction.
     fn set_direction(&mut self, bit: bool);
 
@@ -145,6 +149,11 @@ impl StepperDriver for StepperDriverImpl {
         self.enable.write(enable);
     }
 
+    // Low-level timer output control: enable/disable PWM channel
+    fn set_timer_output(&mut self, enable: bool) {
+        self.tim1.ccer.write(|w| w.cc1e().bit(enable));
+    }
+
     fn set_direction(&mut self, dir: bool) {
         self.dir.write(dir);
     }
@@ -186,6 +195,8 @@ impl StepperDriver for StepperDriverImpl {
         // Check if timer is still running
         self.tim1.cr1.read().cen().bit_is_set()
     }
+
+
 
     fn interrupt(&mut self) -> bool {
         if self.tim1.sr.read().uif().is_update_pending() {
