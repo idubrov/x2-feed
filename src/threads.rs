@@ -37,15 +37,15 @@ impl ThreadInfo {
   /// Calculate the time we need to wait before starting to accelerate stepper motor to make stepper
   /// to run in sync with the spindle. This delay is calculated so our "out-of-phase error" is
   /// minimal once stepper is fully accelerated.
-  pub fn setup_thread_cutting(&mut self, steps_per_thread: u32, target: i32, estimated_rpm: u32) {
+  pub fn setup_thread_cutting(&mut self, steps_per_thread: u32, target: i32, estimated_rpm: u32) -> Result<(), stepgen::Error> {
     self.steps_per_thread = steps_per_thread;
     self.target = target;
     let mut stepgen: stepgen::Stepgen = stepgen::Stepgen::new(self.timer_freq);
     // RPM is in 24.8 already
-    let speed = estimated_rpm * steps_per_thread / 60;
-    stepgen.set_acceleration(self.acceleration).unwrap();
-    stepgen.set_target_speed(speed).unwrap();
-    stepgen.set_target_step(u32::MAX).unwrap();
+    let speed = estimated_rpm / 60 * steps_per_thread;
+    stepgen.set_acceleration(self.acceleration)?;
+    stepgen.set_target_speed(speed)?;
+    stepgen.set_target_step(u32::MAX)?;
     // FIXME: limit in case we have an error in algorithm?...
     while !stepgen.is_at_speed() {
       let _delay = stepgen.next().unwrap();

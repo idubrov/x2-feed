@@ -247,7 +247,9 @@ pub fn begin_panic_handler(info: &PanicInfo<'_>) -> ! {
     write!(display, "{}", info).unwrap();
     display.position(0, 1);
     if let Some(loc) = info.location() {
-        write!(display, "{}:{}                ", loc.line(), loc.column()).unwrap();
+        let file = loc.file();
+        let file = if file.len() < 10 { file } else { &file[file.len() - 10..] };
+        write!(display, "{}:{} {}            ", loc.line(), loc.column(), file).unwrap();
     }
 
     loop {

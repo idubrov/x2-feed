@@ -31,7 +31,7 @@ pub enum State {
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Error {
+pub enum StepperError {
     /// Stepper is not stopped to run given command
     NotStopped,
 
@@ -39,11 +39,11 @@ pub enum Error {
     StepgenError(stepgen::Error),
 }
 
-type Result = core::result::Result<(), Error>;
+type Result = core::result::Result<(), StepperError>;
 
-impl From<stepgen::Error> for Error {
+impl From<stepgen::Error> for StepperError {
     fn from(err: stepgen::Error) -> Self {
-        Error::StepgenError(err)
+        StepperError::StepgenError(err)
     }
 }
 
@@ -178,7 +178,7 @@ impl<S: StepperDriver> Stepper<S> {
     /// running. However, other target parameter, target speed, could be changed any time.
     pub fn move_to(&mut self, target: i32) -> Result {
         if self.state != State::Stopped && self.state != State::ThreadDelay {
-            return Err(Error::NotStopped);
+            return Err(StepperError::NotStopped);
         }
 
         if self.position == target {
@@ -240,10 +240,10 @@ impl<S: StepperDriver> Stepper<S> {
     /// running. However, other target parameter, target speed, could be changed any time.
     pub fn thread_start(&mut self, target: i32, steps_per_thread: u32, estimated_rpm: u32) -> Result {
         if self.state != State::Stopped {
-            return Err(Error::NotStopped);
+            return Err(StepperError::NotStopped);
         }
 
-        self.threads.setup_thread_cutting(steps_per_thread, target, estimated_rpm);
+        self.threads.setup_thread_cutting(steps_per_thread, target, estimated_rpm)?;
         let target_speed = self.threads.calculate_speed(estimated_rpm, 0);
         self.stepgen.set_target_speed(target_speed)?;
         self.state = State::ThreadStart;

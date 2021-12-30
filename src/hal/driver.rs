@@ -165,7 +165,6 @@ impl StepperDriver for StepperDriverImpl {
 
         // Generate event to reload timer values from the preload registers.
         self.tim1.egr.write(|w| w.ug().set_bit());
-        // FIXME: verify: was opm().continuous()
         self.tim1
             .cr1
             .modify(|_, w| w.opm().disabled().cen().enabled());

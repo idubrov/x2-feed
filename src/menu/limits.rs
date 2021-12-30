@@ -71,7 +71,8 @@ fn print_limit(lcd: &mut Display, position: Option<i32>, steps_per_inch: i32) ->
             let thousands = (1000 * steps + bias) / (steps_per_inch as i32);
             let inches = thousands / 1000;
             let thousands = thousands % 1000;
-            write!(lcd, "{}.{:0>3}", inches, thousands.abs())
+            let sign = if thousands < 0 { "-" } else { "" };
+            write!(lcd, "{}{}.{:0>3}", sign, inches.abs(), thousands.abs())
         }
     }
 }

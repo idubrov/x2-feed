@@ -1,7 +1,7 @@
 use crate::menu::util::{NavStatus, Navigation};
 use crate::menu::{MenuItem, MenuResources, limits, steputil};
 use crate::{settings, stepper};
-use crate::stepper::{Error as StepperError, Stepper};
+use crate::stepper::{StepperError as StepperError, Stepper};
 use core::fmt::{self, Write};
 use crate::hal::{Button, Event, StepperDriverImpl};
 use rtic::Mutex;
@@ -65,19 +65,29 @@ impl ThreadMenuItem {
 
 impl MenuItem for ThreadMenuItem {
     fn run(&mut self, r: &mut MenuResources) {
-        let (left, status) = limits::capture_limit(r, "Left");
-        if let NavStatus::Exit = status {
-            return;
-        }
-
-        let (right, status) = limits::capture_limit(r, "Right");
-        if let NavStatus::Exit = status {
-            return;
-        }
+        // let (left, status) = limits::capture_limit(r, "Left");
+        // if let NavStatus::Exit = status {
+        //     return;
+        // }
+        //
+        // let (right, status) = limits::capture_limit(r, "Right");
+        // if let NavStatus::Exit = status {
+        //     return;
+        // }
 
         // FIXME: unwraps... should require setting limits!
-        self.left = left.unwrap();
-        self.right = right.unwrap();
+        //self.left = left.unwrap();
+        //self.right = right.unwrap();
+        let steps_per_inch = settings::steps_per_inch(r.flash) as i32;
+        r.reload_stepper_settings();
+        let speed = ((10 * steps_per_inch) << 8) / 60;
+        r.shared
+          .stepper
+          .lock(|s| s.set_speed(speed as u32))
+          .unwrap();
+
+        self.left = -steps_per_inch;
+        self.right = 0;
 
         // FIXME: select thread size
 
@@ -96,6 +106,10 @@ impl MenuItem for ThreadMenuItem {
             }
         }
 
+    }
+
+    fn is_active_by_default(&self, _r: &mut MenuResources) -> bool {
+        true
     }
 
     fn is_enabled(&self, _r: &mut MenuResources) -> bool {
@@ -120,7 +134,7 @@ fn run_wait_next_operation(r: &mut MenuResources, label: &str) -> NavStatus {
         let event = r.controls.read_event();
         if let Some(NavStatus::Exit) = nav.check(r.estop, event) {
             return NavStatus::Exit;
-        } else if let Event::Unpressed(Button::Fast) = r.controls.read_event() {
+        } else if let Event::Unpressed(Button::Fast) = event {
             return NavStatus::Select;
         }
 
@@ -157,7 +171,7 @@ fn cut_thread_to(r: &mut MenuResources, thread: ThreadSize, position: i32) {
     // FIXME: print last_error here?...
     // FIXME: allow using encoder to adjust the thread phase
     loop {
-        let (state, last_error) = r.shared.stepper.lock(|s| (s.state(), s.last_error_degree()));
+        let (state, last_error) = r.shared.stepper.lock(|s| (s.state(), s.last_error_degrees()));
         if state == stepper::State::Stopped {
             break;
         }

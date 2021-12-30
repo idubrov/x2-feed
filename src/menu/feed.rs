@@ -4,7 +4,7 @@ use crate::menu::util::{NavStatus, Navigation};
 use crate::menu::{limits, steputil, MenuItem, MenuResources};
 use crate::settings;
 use crate::stepper::State as StepperState;
-use crate::stepper::{Direction, Error as StepperError};
+use crate::stepper::{Direction, StepperError as StepperError};
 use core::fmt;
 use core::fmt::Write;
 use rtic::Mutex;
@@ -266,9 +266,9 @@ impl MenuItem for FeedMenuItem {
         }
     }
 
-    fn is_active_by_default(&self, _r: &mut MenuResources) -> bool {
-        true
-    }
+    // fn is_active_by_default(&self, _r: &mut MenuResources) -> bool {
+    //     true
+    // }
 }
 
 impl fmt::Display for FeedMenuItem {
