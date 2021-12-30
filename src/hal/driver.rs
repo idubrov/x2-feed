@@ -163,6 +163,7 @@ impl StepperDriver for StepperDriverImpl {
     fn start(&mut self, first_delay: u16) {
         self.preload_delay(first_delay);
 
+        // FIXME: does this cause second preload?...
         // Generate event to reload timer values from the preload registers.
         self.tim1.egr.write(|w| w.ug().set_bit());
         self.tim1

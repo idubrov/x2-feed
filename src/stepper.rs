@@ -1,7 +1,6 @@
 use stepgen;
 
 use crate::hal::StepperDriver;
-use core;
 
 /// Direction of stepper motor movement
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -38,8 +37,6 @@ pub enum StepperError {
     /// Stepgen error
     StepgenError(stepgen::Error),
 }
-
-type Result = core::result::Result<(), StepperError>;
 
 impl From<stepgen::Error> for StepperError {
     fn from(err: stepgen::Error) -> Self {
@@ -84,7 +81,7 @@ impl<S: StepperDriver> Stepper<S> {
     }
 
     /// Set new acceleration (steps per second per second), in 24.8 format.
-    pub fn set_acceleration(&mut self, acceleration: u32) -> Result {
+    pub fn set_acceleration(&mut self, acceleration: u32) -> Result<(), StepperError> {
         self.stepgen.set_acceleration(acceleration)?;
         self.threads.set_acceleration(acceleration);
         Ok(())
@@ -97,7 +94,7 @@ impl<S: StepperDriver> Stepper<S> {
     /// enough time for deceleration.
     ///
     /// * `speed` - target slew speed to reach, in (micro-)steps per second, 24.8 format
-    pub fn set_speed(&mut self, speed: u32) -> Result {
+    pub fn set_speed(&mut self, speed: u32) -> Result<(), StepperError> {
         Ok(self.stepgen.set_target_speed(speed)?)
     }
 
@@ -146,7 +143,7 @@ impl<S: StepperDriver> Stepper<S> {
             State::ThreadDelay if !self.driver.is_running() => {
                 // Finished our delay, need to initiate thread cutting
                 self.driver.set_timer_output(true);
-                self.move_to(self.position).unwrap();
+                self.move_to(self.threads.target_position()).unwrap();
             }
             State::ThreadDelay => {
                 match self.threads.next_wait_delay() {
@@ -176,13 +173,14 @@ impl<S: StepperDriver> Stepper<S> {
 
     /// Move to given position. Note that no new move commands will be accepted while stepper is
     /// running. However, other target parameter, target speed, could be changed any time.
-    pub fn move_to(&mut self, target: i32) -> Result {
+    pub fn move_to(&mut self, target: i32) -> Result<(), StepperError> {
         if self.state != State::Stopped && self.state != State::ThreadDelay {
             return Err(StepperError::NotStopped);
         }
 
         if self.position == target {
             // Nothing to do!
+            self.state = State::Stopped;
             return Ok(());
         }
 
@@ -238,7 +236,7 @@ impl<S: StepperDriver> Stepper<S> {
 
     /// Move to given position. Note that no new move commands will be accepted while stepper is
     /// running. However, other target parameter, target speed, could be changed any time.
-    pub fn thread_start(&mut self, target: i32, steps_per_thread: u32, estimated_rpm: u32) -> Result {
+    pub fn thread_start(&mut self, target: i32, steps_per_thread: u32, estimated_rpm: u32) -> Result<(), StepperError> {
         if self.state != State::Stopped {
             return Err(StepperError::NotStopped);
         }
@@ -257,6 +255,7 @@ impl<S: StepperDriver> Stepper<S> {
                 // Initiate timer-driven delay for thread cutting
                 self.driver.set_timer_output(false);
                 let delay = self.threads.next_wait_delay();
+                self.state = State::ThreadDelay;
                 self.driver.start(delay);
 
                 // Preload the next delay
@@ -264,7 +263,6 @@ impl<S: StepperDriver> Stepper<S> {
                     0 => self.driver.set_last(),
                     delay => self.driver.preload_delay(delay),
                 }
-                self.state = State::ThreadDelay;
             }
             State::Running { is_cutting_thread, .. } if is_cutting_thread => {
                 let step = self.stepgen.current_step();

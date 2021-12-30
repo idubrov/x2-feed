@@ -70,6 +70,7 @@ impl ThreadInfo {
 
     // We added +1 to revolutions_to_accelerate, so our delay should never be too short.
     assert!(self.delay_remaining > 10_000, "should never wait too short");
+    Ok(())
   }
 
   /// Calculate next delay for our waiting timer.
@@ -102,5 +103,9 @@ impl ThreadInfo {
       degree if degree > 180 => (degree as i32) - 360,
       degree => degree as i32,
     }
+  }
+
+  pub fn target_position(&self) -> i32 {
+    self.target
   }
 }

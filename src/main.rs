@@ -248,7 +248,10 @@ pub fn begin_panic_handler(info: &PanicInfo<'_>) -> ! {
     display.position(0, 1);
     if let Some(loc) = info.location() {
         let file = loc.file();
-        let file = if file.len() < 10 { file } else { &file[file.len() - 10..] };
+        let file = match file.rfind("/") {
+            Some(pos) => &file[pos + 1..],
+            None => file,
+        };
         write!(display, "{}:{} {}            ", loc.line(), loc.column(), file).unwrap();
     }
 

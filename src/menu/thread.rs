@@ -5,6 +5,7 @@ use crate::stepper::{StepperError as StepperError, Stepper};
 use core::fmt::{self, Write};
 use crate::hal::{Button, Event, StepperDriverImpl};
 use rtic::Mutex;
+use stepgen::Error as StepgenError;
 
 const MICRON_PER_INCH: u32 = 25400;
 
@@ -37,7 +38,6 @@ impl fmt::Display for ThreadSize {
 pub struct ThreadMenuItem {
     enabled: bool,
     thread: ThreadSize,
-    error: Option<StepperError>,
     /// Phase for starting the thread cutting, from `0` to `steps_per_thread`. Defines how many steps
     /// do we need to offset our target. If `0`, end of the thread (`left` position) would be
     /// exactly at the location of the magnetic sensor. If `steps_per_thread / 2`, it will be offset
@@ -54,8 +54,7 @@ impl ThreadMenuItem {
     pub fn new(r: &mut crate::menu::MenuResources) -> ThreadMenuItem {
         ThreadMenuItem {
             enabled: settings::IS_LATHE.read(r.flash) != 0,
-            thread: ThreadSize::TPI(16),
-            error: None,
+            thread: ThreadSize::TPI(18),
             phase: 0,
             left: 0,
             right: 0,
@@ -78,6 +77,7 @@ impl MenuItem for ThreadMenuItem {
         // FIXME: unwraps... should require setting limits!
         //self.left = left.unwrap();
         //self.right = right.unwrap();
+        // FIXME: traversal speed?
         let steps_per_inch = settings::steps_per_inch(r.flash) as i32;
         r.reload_stepper_settings();
         let speed = ((10 * steps_per_inch) << 8) / 60;
@@ -163,18 +163,32 @@ fn cut_thread_to(r: &mut MenuResources, thread: ThreadSize, position: i32) {
     let rpm: u32 = r.shared.hall.lock(|hall| hall.rpm());
     let steps_per_inch = settings::steps_per_inch(r.flash);
     let steps_per_thread = thread.to_steps_per_thread(steps_per_inch);
-    r.shared
+    let result = r.shared
       .stepper
-      .lock(|s: &mut Stepper<StepperDriverImpl>| s.thread_start(position, steps_per_thread, rpm))
-      .unwrap();
+      .lock(|s: &mut Stepper<StepperDriverImpl>| s.thread_start(position, steps_per_thread, rpm));
 
-    // FIXME: print last_error here?...
+    if let Err(err) = result {
+        match err {
+            StepperError::StepgenError(StepgenError::TooSlow) => {
+                write!(r.display, "RPM is too low! ").unwrap()
+            }
+            StepperError::StepgenError(StepgenError::TooFast) => {
+                write!(r.display, "RPM is too high!").unwrap()
+            }
+            _ => unreachable!(),
+        };
+        // FIXME: loop?
+    }
+
     // FIXME: allow using encoder to adjust the thread phase
     loop {
         let (state, last_error) = r.shared.stepper.lock(|s| (s.state(), s.last_error_degrees()));
         if state == stepper::State::Stopped {
             break;
         }
+
+        r.display.position(0, 0);
+        write!(r.display, "{:?}", state).unwrap();
 
         // Display thread cutting error
         r.display.position(0, 1);
