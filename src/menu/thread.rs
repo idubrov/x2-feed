@@ -35,8 +35,7 @@ impl fmt::Display for ThreadSize {
     }
 }
 
-pub struct ThreadMenuItem {
-    enabled: bool,
+pub struct ThreadingOperation {
     thread: ThreadSize,
     /// Phase for starting the thread cutting, from `0` to `steps_per_thread`. Defines how many steps
     /// do we need to offset our target. If `0`, end of the thread (`left` position) would be
@@ -50,10 +49,9 @@ pub struct ThreadMenuItem {
     right: i32,
 }
 
-impl ThreadMenuItem {
-    pub fn new(r: &mut crate::menu::MenuResources) -> ThreadMenuItem {
-        ThreadMenuItem {
-            enabled: settings::IS_LATHE.read(r.flash) != 0,
+impl ThreadingOperation {
+    pub fn new() -> ThreadingOperation {
+        ThreadingOperation {
             thread: ThreadSize::TPI(18),
             phase: 0,
             left: 0,
@@ -62,24 +60,26 @@ impl ThreadMenuItem {
     }
 }
 
-impl MenuItem for ThreadMenuItem {
+impl MenuItem for ThreadingOperation {
     fn run(&mut self, r: &mut MenuResources) {
+        r.reload_stepper_settings();
+
         // let (left, status) = limits::capture_limit(r, "Left");
         // if let NavStatus::Exit = status {
         //     return;
         // }
         //
-        // let (right, status) = limits::capture_limit(r, "Right");
-        // if let NavStatus::Exit = status {
-        //     return;
-        // }
+        let (right, status) = limits::capture_limit(r, "Right");
+        if let NavStatus::Exit = status {
+            return;
+        }
 
         // FIXME: unwraps... should require setting limits!
         //self.left = left.unwrap();
         //self.right = right.unwrap();
         // FIXME: traversal speed?
         let steps_per_inch = settings::steps_per_inch(r.flash) as i32;
-        r.reload_stepper_settings();
+
         let speed = ((10 * steps_per_inch) << 8) / 60;
         r.shared
           .stepper
@@ -107,20 +107,6 @@ impl MenuItem for ThreadMenuItem {
         }
 
     }
-
-    fn is_active_by_default(&self, _r: &mut MenuResources) -> bool {
-        true
-    }
-
-    fn is_enabled(&self, _r: &mut MenuResources) -> bool {
-        self.enabled
-    }
-}
-
-impl fmt::Display for ThreadMenuItem {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("Threads")
-    }
 }
 
 /// Wait until operator signals to continue thread cutting by pressing `Fast` button.
@@ -132,13 +118,12 @@ fn run_wait_next_operation(r: &mut MenuResources, label: &str) -> NavStatus {
     loop {
         // We use `Fast` button for continuing the operation instead of typical `Encoder` button.
         let event = r.controls.read_event();
-        if let Some(NavStatus::Exit) = nav.check(r.estop, event) {
-            return NavStatus::Exit;
-        } else if let Event::Unpressed(Button::Fast) = event {
-            return NavStatus::Select;
+        match nav.check(r.estop, event) {
+            Some(NavStatus::Exit) => return NavStatus::Exit,
+            Some(NavStatus::Select) => return NavStatus::Select,
+            None if matches!(event, Event::Pressed(Button::Fast)) => return NavStatus::Select,
+            _ => {}
         }
-
-        // FIXME: here we might allow to change phase of the thread?..
     }
 }
 
@@ -186,9 +171,6 @@ fn cut_thread_to(r: &mut MenuResources, thread: ThreadSize, position: i32) {
         if state == stepper::State::Stopped {
             break;
         }
-
-        r.display.position(0, 0);
-        write!(r.display, "{:?}", state).unwrap();
 
         // Display thread cutting error
         r.display.position(0, 1);

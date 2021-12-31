@@ -35,7 +35,7 @@ mod app {
         clock, delay, Controls, Display, Led, QuadEncoder, RpmSensor, Screen, StepperDriverImpl,
         DRIVER_TICK_FREQUENCY,
     };
-    use crate::menu::{MainMenu, MenuItem, MenuResources};
+    use crate::menu::{LatheMenu, MenuItem, MenuResources, MillMenu};
     use crate::stepper::Stepper;
     use eeprom::EEPROM;
     use stm32_hal::gpio::{Pin, Port};
@@ -129,7 +129,9 @@ mod app {
             pa12, pa13, pa14, pa15, pb2, pb3, pb4, pb5, pb6, pb7, pb8, pb9,
         ]);
 
-        estop.config().floating();
+        // pull-up
+        estop.config().pull_up_down();
+        estop.on();
 
         // Initialize peripherals
         let driver =
@@ -178,9 +180,17 @@ mod app {
             driver_freq: DRIVER_TICK_FREQUENCY,
         };
 
-        let mut menu = MainMenu::new(&mut r);
-        loop {
-            menu.run(&mut r);
+        let is_lathe = crate::settings::IS_LATHE.read(&r.flash) != 0;
+        if is_lathe {
+            let mut menu = LatheMenu::new();
+            loop {
+                menu.run(&mut r);
+            }
+        } else {
+            let mut menu = MillMenu::new();
+            loop {
+                menu.run(&mut r);
+            }
         }
     }
 

@@ -271,6 +271,7 @@ impl<HW: Hardware + Delay> Display<HW> {
     /// lcd.clear();
     /// lcd.entry_mode(EntryModeDirection::EntryRight, EntryModeShift::NoShift);
     /// ```
+    #[inline(never)]
     pub fn init(&mut self, line: FunctionLine, dots: FunctionDots) {
         let mode = self.hw.mode();
         self.hw.rs(false);
@@ -394,6 +395,7 @@ impl<HW: Hardware + Delay> Display<HW> {
     }
 
     /// Write given character (given as `data` of type `u8`) on the LCD screen.
+    #[inline(never)]
     pub fn write(&mut self, data: u8) -> &Self {
         self.hw.rs(true);
         self.hw.apply();
@@ -408,6 +410,7 @@ impl<HW: Hardware + Delay> Display<HW> {
     /// Upload character image at given location. Only locations 0-7 are supported (panics otherwise).
     /// Each character is represented by an array of 8 bytes, each byte being a row.
     /// Only 5 bits are used from each byte (representing columns).
+    #[inline(never)]
     pub fn upload_character(&mut self, location: u8, map: [u8; 8]) -> &Self {
         assert!(location <= 7);
 
@@ -419,6 +422,7 @@ impl<HW: Hardware + Delay> Display<HW> {
         self
     }
 
+    #[inline(never)]
     fn command(&mut self, cmd: u8) -> &Self {
         self.hw.rs(false);
         self.hw.apply();
@@ -433,6 +437,7 @@ impl<HW: Hardware + Delay> Display<HW> {
         self.wait_ready(50);
     }
 
+    #[inline(never)]
     fn pulse_enable(&mut self) {
         self.hw.enable(true);
         self.hw.apply();
@@ -441,6 +446,7 @@ impl<HW: Hardware + Delay> Display<HW> {
         self.hw.apply();
     }
 
+    #[inline(never)]
     fn send(&mut self, data: u8) {
         match self.hw.mode() {
             FunctionMode::Bit8 => {
@@ -453,6 +459,7 @@ impl<HW: Hardware + Delay> Display<HW> {
         }
     }
 
+    #[inline(never)]
     fn send_data(&mut self, data: u8) {
         self.hw.data(data);
         self.hw.apply();
@@ -460,6 +467,7 @@ impl<HW: Hardware + Delay> Display<HW> {
     }
 
     /// Function to wait until HD44780 is ready.
+    #[inline(never)]
     fn wait_ready(&mut self, delay: u32) {
         if self.hw.can_read() {
             self.hw.rs(false);
@@ -481,6 +489,7 @@ impl<HW: Hardware + Delay> Display<HW> {
         }
     }
 
+    #[inline(never)]
     fn receive_data(&mut self) -> u8 {
         self.hw.enable(true);
         self.hw.apply();

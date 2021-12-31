@@ -71,7 +71,7 @@ pub enum FeedSpeed {
     Slow,
 }
 
-pub struct FeedMenuItem {
+pub struct FeedOperation {
     speed: u32,
     error: Option<StepperError>,
     slow_speed: FeedRate,
@@ -81,13 +81,12 @@ pub struct FeedMenuItem {
     limits: (Option<i32>, Option<i32>),
 }
 
-impl FeedMenuItem {
-    pub fn new(r: &mut crate::menu::MenuResources) -> FeedMenuItem {
-        let lathe = settings::IS_LATHE.read(r.flash) != 0;
-        FeedMenuItem {
+impl FeedOperation {
+    pub fn new(is_lathe: bool) -> FeedOperation {
+        FeedOperation {
             speed: 0,
             error: None,
-            slow_speed: if lathe {
+            slow_speed: if is_lathe {
                 FeedRate::IPR(4)
             } else {
                 FeedRate::IPM(10)
@@ -244,7 +243,7 @@ impl FeedMenuItem {
     }
 }
 
-impl MenuItem for FeedMenuItem {
+impl MenuItem for FeedOperation {
     fn run(&mut self, r: &mut MenuResources) {
         loop {
             // FIXME: make submenus?
@@ -269,10 +268,4 @@ impl MenuItem for FeedMenuItem {
     // fn is_active_by_default(&self, _r: &mut MenuResources) -> bool {
     //     true
     // }
-}
-
-impl fmt::Display for FeedMenuItem {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("Feed")
-    }
 }

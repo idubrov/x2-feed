@@ -1,11 +1,10 @@
-use self::feed::FeedMenuItem;
-use self::thread::ThreadMenuItem;
+use self::feed::FeedOperation;
+use self::thread::ThreadingOperation;
 use crate::hal::{Controls, Display, QuadEncoder};
-use crate::settings;
-use core::fmt;
 use rtic::Mutex;
 use stm32_hal::gpio::Pin;
 use stm32f1::stm32f103::FLASH;
+use crate::settings;
 
 pub struct MenuResources<'a> {
     pub encoder: &'a mut QuadEncoder,
@@ -40,36 +39,103 @@ mod limits;
 mod steputil;
 mod thread;
 
-pub trait MenuItem: fmt::Display {
+/// Trait for a generic menu item
+pub trait MenuItem {
     fn run(&mut self, r: &mut MenuResources);
+}
 
-    fn is_active_by_default(&self, _r: &mut MenuResources) -> bool {
-        false
-    }
+pub struct SettingsMenuTemplate<const N: usize> {
+    settings: [settings::Setting; N],
+}
 
-    fn is_enabled(&self, _r: &mut MenuResources) -> bool {
-        true
+pub type SettingsMenu = SettingsMenuTemplate<6>;
+
+impl <const N: usize> MenuItem for SettingsMenuTemplate<N> {
+    fn run(&mut self, r: &mut MenuResources) {
+        let labels = self.settings.map(|setting| setting.label());
+        while let Some(pos) = crate::menu::util::run_selection(r, "-- Settings --", &labels) {
+            crate::menu::util::run_setting(r, &self.settings[pos], self.settings[pos].label());
+        }
     }
 }
 
-menu_setting!(IsLathe, "Is Lathe?", settings::IS_LATHE);
-menu_setting!(Reversed, "Is Reversed?", settings::IS_REVERSED);
-menu_setting!(Microsteps, "Microsteps", settings::MICROSTEPS);
-menu_setting!(Pitch, "Pitch", settings::PITCH);
-menu_setting!(MaxIPM, "MaxIPM", settings::MAX_IPM);
-menu_setting!(Acceleration, "Acceleration", settings::ACCELERATION);
+impl SettingsMenu {
+    pub fn new() -> SettingsMenu {
+        SettingsMenu {
+            settings: [
+                settings::IS_LATHE,
+                settings::IS_REVERSED,
+                settings::MICROSTEPS,
+                settings::PITCH,
+                settings::MAX_IPM,
+                settings::ACCELERATION,
+            ]
+        }
+    }
+}
 
-menu!(SettingsMenu, "Settings", {
-    IsLathe(),
-    Reversed(),
-    Microsteps(),
-    Pitch(),
-    MaxIPM(),
-    Acceleration(),
-});
 
-menu!(MainMenu, "Main", {
-    FeedMenuItem(),
-    ThreadMenuItem(),
-    SettingsMenu(),
-});
+
+pub struct LatheMenu {
+    feed: FeedOperation,
+    thread: ThreadingOperation,
+    settings: SettingsMenu,
+}
+
+impl LatheMenu {
+    pub fn new() -> LatheMenu {
+        LatheMenu {
+            feed: FeedOperation::new(true),
+            thread: ThreadingOperation::new(),
+            settings: SettingsMenu::new(),
+        }
+    }
+}
+
+impl MenuItem for LatheMenu {
+    fn run(&mut self, r: &mut MenuResources) {
+        const LABELS: [&str; 3] = [ "> Power Feed", "> Threading", "> Settings" ];
+
+        // Default menu item
+        self.feed.run(r);
+        while let Some(pos) = crate::menu::util::run_selection(r, "-- Select --", &LABELS) {
+            match pos {
+                0 => self.feed.run(r),
+                1 => self.thread.run(r),
+                2 => self.settings.run(r),
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+
+pub struct MillMenu {
+    feed: FeedOperation,
+    settings: SettingsMenu,
+}
+
+impl MillMenu {
+    pub fn new() -> MillMenu {
+        MillMenu {
+            feed: FeedOperation::new(false),
+            settings: SettingsMenu::new(),
+        }
+    }
+}
+
+impl MenuItem for MillMenu {
+    fn run(&mut self, r: &mut MenuResources) {
+        const LABELS: [&str; 2] = [ "> Power Feed", "> Settings" ];
+
+        // Default menu item
+        self.feed.run(r);
+        while let Some(pos) = crate::menu::util::run_selection(r, "-- Select --", &LABELS) {
+            match pos {
+                0 => self.feed.run(r),
+                1 => self.settings.run(r),
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+
