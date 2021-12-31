@@ -1,36 +1,55 @@
-use crate::menu::util::{NavStatus, Navigation};
-use crate::menu::{MenuItem, MenuResources, limits, steputil};
+use crate::hal::{Button, Event};
+use crate::menu::util::{printable_position, wait_proceed, NavStatus, Navigation};
+use crate::menu::{steputil, MenuItem, MenuResources};
+use crate::stepper::StepperError;
 use crate::{settings, stepper};
-use crate::stepper::{StepperError as StepperError, Stepper};
-use core::fmt::{self, Write};
-use crate::hal::{Button, Event, StepperDriverImpl};
+use core::fmt::Write;
 use rtic::Mutex;
 use stepgen::Error as StepgenError;
 
-const MICRON_PER_INCH: u32 = 25400;
+const METRIC_100TH_PER_INCH: u32 = 2540;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum ThreadSize {
     /// Threads per inch
-    TPI(u16),
-    /// Microns per thread
-    MICRON(u16),
+    Tpi(u16),
+    /// 1/100 of millimeter
+    Metric(u16),
+    /// British Association threads
+    Ba(u16),
 }
 
 impl ThreadSize {
     fn to_steps_per_thread(self, steps_per_inch: u32) -> u32 {
         match self {
-            ThreadSize::TPI(tpi) => steps_per_inch / u32::from(tpi),
-            ThreadSize::MICRON(micron) => u32::from(micron) * steps_per_inch / MICRON_PER_INCH,
+            ThreadSize::Tpi(tpi) => steps_per_inch / u32::from(tpi),
+            ThreadSize::Metric(metric) => {
+                u32::from(metric) * steps_per_inch / METRIC_100TH_PER_INCH
+            }
+            ThreadSize::Ba(ba) => {
+                let metric = british_association_mm(ba);
+                u32::from(metric) * steps_per_inch / METRIC_100TH_PER_INCH
+            }
         }
     }
 }
 
-impl fmt::Display for ThreadSize {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+/// Convert [British Association](https://en.wikipedia.org/wiki/British_Association_screw_threads)
+/// thread size to metric.
+fn british_association_mm(ba: u16) -> u16 {
+    let mut size = 100u16;
+    for _ in 0..ba {
+        size = (size * 9 + 5) / 10;
+    }
+    size
+}
+
+impl core::fmt::Display for ThreadSize {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match *self {
-            ThreadSize::TPI(tpi) => write!(f, "{: >3} TPI", tpi),
-            ThreadSize::MICRON(micron) => write!(f, "{}.{:0>3}mm", micron / 1000, micron % 1000),
+            ThreadSize::Tpi(tpi) => write!(f, "{: >3} TPI", tpi),
+            ThreadSize::Metric(m100th) => write!(f, "{}.{:0>2}mm", m100th / 100, m100th % 100),
+            ThreadSize::Ba(size) => write!(f, "{}BA", size),
         }
     }
 }
@@ -52,7 +71,7 @@ pub struct ThreadingOperation {
 impl ThreadingOperation {
     pub fn new() -> ThreadingOperation {
         ThreadingOperation {
-            thread: ThreadSize::TPI(18),
+            thread: ThreadSize::Tpi(18),
             phase: 0,
             left: 0,
             right: 0,
@@ -62,97 +81,62 @@ impl ThreadingOperation {
 
 impl MenuItem for ThreadingOperation {
     fn run(&mut self, r: &mut MenuResources) {
+        self.run_impl(r);
+    }
+}
+
+impl ThreadingOperation {
+    fn run_impl(&mut self, r: &mut MenuResources) -> Option<()> {
         r.reload_stepper_settings();
-
-        // let (left, status) = limits::capture_limit(r, "Left");
-        // if let NavStatus::Exit = status {
-        //     return;
-        // }
-        //
-        let (right, status) = limits::capture_limit(r, "Right");
-        if let NavStatus::Exit = status {
-            return;
-        }
-
-        // FIXME: unwraps... should require setting limits!
-        //self.left = left.unwrap();
-        //self.right = right.unwrap();
-        // FIXME: traversal speed?
         let steps_per_inch = settings::steps_per_inch(r.flash) as i32;
 
-        let speed = ((10 * steps_per_inch) << 8) / 60;
-        r.shared
-          .stepper
-          .lock(|s| s.set_speed(speed as u32))
-          .unwrap();
+        self.thread = select_thread_size(r)?;
 
-        self.left = -steps_per_inch;
-        self.right = 0;
+        // FIXME: allow using feed to go to the desired position precisely?
+        r.display.position(0, 0);
+        write!(r.display, "At shoulder?    ").unwrap();
+        wait_proceed(r);
 
-        // FIXME: select thread size
+        self.left = r.shared.stepper.lock(|s| s.position());
+        self.right = capture_retract_position(r, steps_per_inch)?;
+
+        // FIXME: warn if not enough space to accelerate?
 
         // Main thread cutting thread
         loop {
-            return_to(r, self.right);
-            if run_wait_next_operation(r, "Start cutting?") == NavStatus::Exit {
-                // FIXME: could loose thread syncing if exit here...
-                break;
+            // Retract to the starting position (if needed)
+            if r.shared.stepper.lock(|s| s.position()) != self.right {
+                r.display.position(0, 0);
+                write!(r.display, "Retracting...   ").unwrap();
+                r.shared.stepper.lock(|s| s.move_to(self.right)).unwrap();
+                steputil::wait_stopped(&mut r.shared);
             }
+
+            // Cutting thread
+            r.display.position(0, 0);
+            write!(r.display, "Start cutting?  ").unwrap();
+            wait_proceed(r)?;
 
             cut_thread_to(r, self.thread, self.left);
-            if run_wait_next_operation(r, "Retract?") == NavStatus::Exit {
-                // FIXME: could loose thread syncing if exit here...
-                break;
-            }
-        }
 
-    }
-}
-
-/// Wait until operator signals to continue thread cutting by pressing `Fast` button.
-fn run_wait_next_operation(r: &mut MenuResources, label: &str) -> NavStatus {
-    r.display.clear();
-    r.display.position(0, 0);
-    write!(r.display, "{}", label).unwrap();
-    let mut nav = Navigation::new();
-    loop {
-        // We use `Fast` button for continuing the operation instead of typical `Encoder` button.
-        let event = r.controls.read_event();
-        match nav.check(r.estop, event) {
-            Some(NavStatus::Exit) => return NavStatus::Exit,
-            Some(NavStatus::Select) => return NavStatus::Select,
-            None if matches!(event, Event::Pressed(Button::Fast)) => return NavStatus::Select,
-            _ => {}
+            // Ask to retract back
+            r.display.position(0, 0);
+            write!(r.display, "Retract?        ").unwrap();
+            wait_proceed(r)?;
         }
     }
-}
-
-/// Return stepper motor to the starting position
-fn return_to(r: &mut MenuResources, position: i32) {
-    r.display.clear();
-    r.display.position(0, 0);
-    write!(r.display, "Retracting...").unwrap();
-    r.shared
-      .stepper
-      .lock(|s: &mut Stepper<StepperDriverImpl>| s.move_to(position))
-      .unwrap();
-    steputil::wait_stopped(&mut r.shared);
 }
 
 fn cut_thread_to(r: &mut MenuResources, thread: ThreadSize, position: i32) {
-    r.display.clear();
-    r.display.position(0, 0);
-    write!(r.display, "Cutting...").unwrap();
-
-    // FIXME: should start when FAST is pressed
     let rpm: u32 = r.shared.hall.lock(|hall| hall.rpm());
     let steps_per_inch = settings::steps_per_inch(r.flash);
     let steps_per_thread = thread.to_steps_per_thread(steps_per_inch);
-    let result = r.shared
-      .stepper
-      .lock(|s: &mut Stepper<StepperDriverImpl>| s.thread_start(position, steps_per_thread, rpm));
-
-    if let Err(err) = result {
+    while let Err(err) = r
+        .shared
+        .stepper
+        .lock(|s| s.thread_start(position, steps_per_thread, rpm))
+    {
+        r.display.position(0, 0);
         match err {
             StepperError::StepgenError(StepgenError::TooSlow) => {
                 write!(r.display, "RPM is too low! ").unwrap()
@@ -162,12 +146,21 @@ fn cut_thread_to(r: &mut MenuResources, thread: ThreadSize, position: i32) {
             }
             _ => unreachable!(),
         };
-        // FIXME: loop?
+
+        r.display.position(0, 1);
+        write!(r.display, "Retry?          ").unwrap();
+        wait_proceed(r);
     }
+
+    r.display.position(0, 0);
+    write!(r.display, "Cutting...      ").unwrap();
 
     // FIXME: allow using encoder to adjust the thread phase
     loop {
-        let (state, last_error) = r.shared.stepper.lock(|s| (s.state(), s.last_error_degrees()));
+        let (state, last_error) = r
+            .shared
+            .stepper
+            .lock(|s| (s.state(), s.last_error_degrees()));
         if state == stepper::State::Stopped {
             break;
         }
@@ -176,6 +169,113 @@ fn cut_thread_to(r: &mut MenuResources, thread: ThreadSize, position: i32) {
         r.display.position(0, 1);
         let sign = if last_error < 0 { "-" } else { " " };
         let le = last_error.abs();
-        write!(r.display, "Err: {}{}.{}", sign, le / 10, le % 10).unwrap();
+        write!(r.display, "Err: {}{}.{}        ", sign, le / 10, le % 10).unwrap();
+    }
+}
+
+enum ThreadSystem {
+    Inch,
+    Metric,
+    BritishAssociation,
+}
+
+impl core::fmt::Display for ThreadSystem {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.write_str(match self {
+            ThreadSystem::Inch => "Inch",
+            ThreadSystem::Metric => "Metric",
+            ThreadSystem::BritishAssociation => "BA",
+        })
+    }
+}
+
+fn select_thread_size(r: &mut MenuResources) -> Option<ThreadSize> {
+    const INCH_THREADS: [u16; 20] = [
+        4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24, 32, 40, 48, 56, 64,
+    ];
+    const METRIC_THREADS: [u16; 20] = [
+        35, 40, 45, 50, 60, 70, 80, 100, 125, 150, 175, 200, 250, 300, 350, 400, 450, 500, 550, 600,
+    ];
+    const BA_THREADS: [u16; 11] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+    let kind = super::util::run_selection(
+        r,
+        "Thread Type?",
+        &[
+            ThreadSystem::Inch,
+            ThreadSystem::Metric,
+            ThreadSystem::BritishAssociation,
+        ],
+        0,
+    )?;
+    // Select thread size
+    match kind {
+        ThreadSystem::Inch => {
+            // Well, there is also 4 1/2, but we just ignore it for simplicity :)
+            let sizes = INCH_THREADS.map(ThreadSize::Tpi);
+            let default = sizes
+                .iter()
+                .copied()
+                .position(|t| t == ThreadSize::Tpi(16))
+                .unwrap();
+            super::util::run_selection(r, "Thread Size?", &sizes, default).copied()
+        }
+        ThreadSystem::Metric => {
+            let sizes = METRIC_THREADS.map(ThreadSize::Metric);
+            let default = sizes
+                .iter()
+                .copied()
+                .position(|t| t == ThreadSize::Metric(100))
+                .unwrap();
+            super::util::run_selection(r, "Thread Size?", &sizes, default).copied()
+        }
+        ThreadSystem::BritishAssociation => {
+            let sizes = BA_THREADS.map(ThreadSize::Ba);
+            let default = sizes
+                .iter()
+                .copied()
+                .position(|t| t == ThreadSize::Ba(6))
+                .unwrap();
+            super::util::run_selection(r, "Thread Size?", &sizes, default).copied()
+        }
+    }
+}
+
+fn capture_retract_position(r: &mut MenuResources, steps_per_inch: i32) -> Option<i32> {
+    let mut deltaenc = r.encoder.delta_encoder();
+    let mut nav = Navigation::new();
+
+    r.display.clear();
+    r.display.position(0, 0);
+    write!(r.display, "Retract Distance").unwrap();
+    let start = r.shared.stepper.lock(|s| s.position());
+    loop {
+        let delta = i32::from(deltaenc.delta());
+        if delta != 0 {
+            // Update stepper position; unit is 0.100 inch
+            steputil::move_delta(delta * steps_per_inch / 10, &mut r.shared);
+            // FIXME: print "MOVING..."
+            steputil::wait_stopped(&mut r.shared);
+        }
+
+        let current = r.shared.stepper.lock(|s| s.position());
+        let distance = current - start;
+
+        // Update screen
+        r.display.position(0, 1);
+        write!(
+            r.display,
+            "{} inch",
+            printable_position(distance, steps_per_inch)
+        )
+        .unwrap();
+
+        let event = r.controls.read_event();
+        match nav.check(r.estop, event) {
+            Some(NavStatus::Exit) => return None,
+            Some(NavStatus::Select) => return Some(current),
+            _ if matches!(event, Event::Pressed(Button::Fast)) => return Some(current),
+            _ => {}
+        }
     }
 }

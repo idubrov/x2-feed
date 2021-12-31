@@ -46,8 +46,9 @@ impl QuadEncoder {
         (self.tim3.arr.read().arr().bits() + 1) / 2
     }
 
-    /// Set rotary encoder limit.
-    pub fn set_limit(&mut self, limit: u16) {
+    /// Set rotary encoder limit. Note that this function is "unsafe" because it changes the
+    /// configuration of the encoder without resetting it back.
+    pub fn set_limit_unsafe(&mut self, limit: u16) {
         self.tim3.arr.write(|w| w.arr().bits((limit * 2) - 1));
     }
 
@@ -59,5 +60,84 @@ impl QuadEncoder {
     /// Set current value of the rotary encoder.
     pub fn set_current(&mut self, pos: u16) {
         self.tim3.cnt.write(|w| w.cnt().bits(pos * 2));
+    }
+
+    /// Set `limit` and `current` value temporarily. Once return value is dropped, encoder is
+    /// reset back to its original settings.
+    pub fn set_current_limit(&mut self, current: u16, limit: u16) -> QuadEncoderWithSettings {
+        let (old_limit, old_current) = (self.get_limit(), self.current());
+        self.set_limit_unsafe(limit);
+        self.set_current(current);
+        QuadEncoderWithSettings {
+            limit: old_limit,
+            current: old_current,
+            encoder: self,
+        }
+    }
+
+    pub fn delta_encoder(&mut self) -> EncoderDelta {
+        EncoderDelta::new(self)
+    }
+}
+
+pub struct QuadEncoderWithSettings<'a> {
+    limit: u16,
+    current: u16,
+    encoder: &'a mut QuadEncoder,
+}
+
+impl<'a> core::ops::Deref for QuadEncoderWithSettings<'a> {
+    type Target = QuadEncoder;
+
+    fn deref(&self) -> &QuadEncoder {
+        self.encoder
+    }
+}
+
+impl<'a> core::ops::DerefMut for QuadEncoderWithSettings<'a> {
+    fn deref_mut(&mut self) -> &mut QuadEncoder {
+        self.encoder
+    }
+}
+
+impl<'a> Drop for QuadEncoderWithSettings<'a> {
+    fn drop(&mut self) {
+        self.encoder.set_limit_unsafe(self.limit);
+        self.encoder.set_current(self.current);
+    }
+}
+
+// Any reasonably big number to make sure you cannot crank half of it on the encoder between 'ticks'
+const LIMIT: u16 = 20_000;
+
+/// Helper structure to use encoder as encoder producing "deltas".
+pub struct EncoderDelta<'a> {
+    last: u16,
+    encoder: QuadEncoderWithSettings<'a>,
+}
+
+impl<'a> EncoderDelta<'a> {
+    fn new(encoder: &'a mut QuadEncoder) -> Self {
+        Self {
+            last: LIMIT / 2,
+            encoder: encoder.set_current_limit(LIMIT / 2, LIMIT),
+        }
+    }
+
+    pub fn delta(&mut self) -> i16 {
+        let current = self.encoder.current();
+        // Substract unsigned wrapping around LIMIT
+        let delta = if current < self.last {
+            current + LIMIT - self.last
+        } else {
+            current - self.last
+        };
+        self.last = current;
+        // Convert delta to signed -LIMIT/2 to LIMIT/2
+        if delta < LIMIT / 2 {
+            delta as i16
+        } else {
+            (delta as i16) - LIMIT as i16
+        }
     }
 }

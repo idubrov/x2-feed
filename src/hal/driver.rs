@@ -196,8 +196,6 @@ impl StepperDriver for StepperDriverImpl {
         self.tim1.cr1.read().cen().bit_is_set()
     }
 
-
-
     fn interrupt(&mut self) -> bool {
         if self.tim1.sr.read().uif().is_update_pending() {
             self.tim1.sr.modify(|_, w| w.uif().clear());

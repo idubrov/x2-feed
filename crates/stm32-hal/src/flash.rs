@@ -19,9 +19,15 @@ where
     ///
     /// # Panics
     /// Panics if unlock sequence did not unlock the flash
+    ///
+    /// # Safety
+    ///
     unsafe fn unlock(&self);
 
     /// Lock the Flash program and erase controller (FPEC).
+    ///
+    /// # Safety
+    ///
     unsafe fn lock(&self);
 
     /// Unlocks the Flash program and erase controller (FPEC).
@@ -30,6 +36,9 @@ where
     ///
     /// # Note
     /// If flash is unlocked already, unlock sequence is skipped and it Flash is not locked when guard drops.
+    ///
+    /// # Safety
+    ///
     unsafe fn unlock_guard(&self) -> UnlockResult<Self> {
         let locked = self.is_locked();
         if locked {
@@ -43,13 +52,22 @@ where
 
     /// Erase specified flash page. `address` must be an address of a beginning of the page in
     /// Flash memory.
+    ///
+    /// # Safety
+    ///
     unsafe fn erase_page(&self, address: usize) -> FlashResult;
 
     /// Program half-word (16-bit) value at a specified address. `address` must be an address of
     /// a location in the Flash memory aligned to two bytes.
+    ///
+    /// # Safety
+    ///
     unsafe fn program_half_word(&self, address: usize, data: u16) -> FlashResult;
 
     /// Erase all Flash pages
+    ///
+    /// # Safety
+    ///
     unsafe fn erase_all_pages(&self) -> FlashResult;
 }
 

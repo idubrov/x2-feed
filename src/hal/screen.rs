@@ -42,7 +42,7 @@ impl lcd::Hardware for Screen {
     }
 
     fn data(&mut self, data: u8) {
-        self.data[0].write(((data >> 0) & 1) != 0);
+        self.data[0].write((data & 1) != 0);
         self.data[1].write(((data >> 1) & 1) != 0);
         self.data[2].write(((data >> 2) & 1) != 0);
         self.data[3].write(((data >> 3) & 1) != 0);

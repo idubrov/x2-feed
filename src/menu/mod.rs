@@ -1,10 +1,10 @@
 use self::feed::FeedOperation;
 use self::thread::ThreadingOperation;
-use crate::hal::{Controls, Display, QuadEncoder};
+use crate::hal::{Controls, Display, QuadEncoder, StepperDriverImpl};
+use crate::settings;
 use rtic::Mutex;
 use stm32_hal::gpio::Pin;
 use stm32f1::stm32f103::FLASH;
-use crate::settings;
 
 pub struct MenuResources<'a> {
     pub encoder: &'a mut QuadEncoder,
@@ -18,15 +18,20 @@ pub struct MenuResources<'a> {
 }
 
 impl MenuResources<'_> {
-    // Reload stepper settings from EEPROM
+    /// Reload stepper settings from EEPROM. Sets acceleration, reverse flag and speed. Speed
+    /// is set to the default traversal speed.
     fn reload_stepper_settings(&mut self) {
         let reversed = settings::IS_REVERSED.read(self.flash) != 0;
         let acceleration = (u32::from(settings::ACCELERATION.read(self.flash))
             * u32::from(settings::MICROSTEPS.read(self.flash)))
             << 8;
+        let traversal = u32::from(settings::TRAVERSAL.read(self.flash));
+        let steps_per_inch = settings::steps_per_inch(self.flash);
+        let speed = ((traversal * steps_per_inch) << 8) / 60;
 
         self.shared.stepper.lock(|s| {
             s.set_reversed(reversed);
+            s.set_speed(speed).unwrap();
             s.set_acceleration(acceleration).unwrap();
         });
     }
@@ -48,13 +53,14 @@ pub struct SettingsMenuTemplate<const N: usize> {
     settings: [settings::Setting; N],
 }
 
-pub type SettingsMenu = SettingsMenuTemplate<6>;
+pub type SettingsMenu = SettingsMenuTemplate<7>;
 
-impl <const N: usize> MenuItem for SettingsMenuTemplate<N> {
+impl<const N: usize> MenuItem for SettingsMenuTemplate<N> {
     fn run(&mut self, r: &mut MenuResources) {
-        let labels = self.settings.map(|setting| setting.label());
-        while let Some(pos) = crate::menu::util::run_selection(r, "-- Settings --", &labels) {
-            crate::menu::util::run_setting(r, &self.settings[pos], self.settings[pos].label());
+        while let Some(setting) =
+            crate::menu::util::run_selection(r, "-- Settings --", &self.settings, 0)
+        {
+            crate::menu::util::run_setting(r, setting);
         }
     }
 }
@@ -69,12 +75,11 @@ impl SettingsMenu {
                 settings::PITCH,
                 settings::MAX_IPM,
                 settings::ACCELERATION,
-            ]
+                settings::TRAVERSAL,
+            ],
         }
     }
 }
-
-
 
 pub struct LatheMenu {
     feed: FeedOperation,
@@ -94,11 +99,11 @@ impl LatheMenu {
 
 impl MenuItem for LatheMenu {
     fn run(&mut self, r: &mut MenuResources) {
-        const LABELS: [&str; 3] = [ "> Power Feed", "> Threading", "> Settings" ];
+        const LABELS: [&str; 3] = ["> Power Feed", "> Threading", "> Settings"];
 
         // Default menu item
         self.feed.run(r);
-        while let Some(pos) = crate::menu::util::run_selection(r, "-- Select --", &LABELS) {
+        while let Some(pos) = crate::menu::util::run_selection_idx(r, "-- Select --", &LABELS, 0) {
             match pos {
                 0 => self.feed.run(r),
                 1 => self.thread.run(r),
@@ -125,11 +130,11 @@ impl MillMenu {
 
 impl MenuItem for MillMenu {
     fn run(&mut self, r: &mut MenuResources) {
-        const LABELS: [&str; 2] = [ "> Power Feed", "> Settings" ];
+        const LABELS: [&str; 2] = ["> Power Feed", "> Settings"];
 
         // Default menu item
         self.feed.run(r);
-        while let Some(pos) = crate::menu::util::run_selection(r, "-- Select --", &LABELS) {
+        while let Some(pos) = crate::menu::util::run_selection_idx(r, "-- Select --", &LABELS, 0) {
             match pos {
                 0 => self.feed.run(r),
                 1 => self.settings.run(r),
@@ -138,4 +143,3 @@ impl MenuItem for MillMenu {
         }
     }
 }
-

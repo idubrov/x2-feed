@@ -173,7 +173,7 @@ impl PinT<RegisterBlock> {
     /// Get access to the configuration registers for a given pin.
     pub fn config(&self) -> &GPIOBitbandPinConfigBits {
         let registers: &GPIOBitbandConfigBits = unsafe { to_bitband_address(self.port) };
-        &registers.config(self.pin)
+        registers.config(self.pin)
     }
 
     fn register(&self) -> &RegisterBlock {

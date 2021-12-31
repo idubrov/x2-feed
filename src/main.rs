@@ -180,7 +180,7 @@ mod app {
             driver_freq: DRIVER_TICK_FREQUENCY,
         };
 
-        let is_lathe = crate::settings::IS_LATHE.read(&r.flash) != 0;
+        let is_lathe = crate::settings::IS_LATHE.read(r.flash) != 0;
         if is_lathe {
             let mut menu = LatheMenu::new();
             loop {
@@ -258,11 +258,18 @@ pub fn begin_panic_handler(info: &PanicInfo<'_>) -> ! {
     display.position(0, 1);
     if let Some(loc) = info.location() {
         let file = loc.file();
-        let file = match file.rfind("/") {
+        let file = match file.rfind('/') {
             Some(pos) => &file[pos + 1..],
             None => file,
         };
-        write!(display, "{}:{} {}            ", loc.line(), loc.column(), file).unwrap();
+        write!(
+            display,
+            "{}:{} {}            ",
+            loc.line(),
+            loc.column(),
+            file
+        )
+        .unwrap();
     }
 
     loop {

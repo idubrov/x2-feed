@@ -11,6 +11,12 @@ pub struct Setting {
     label: &'static str,
 }
 
+impl core::fmt::Display for Setting {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.write_str(self.label)
+    }
+}
+
 impl Setting {
     pub const fn new(label: &'static str, tag: u16, default: u16, min: u16, max: u16) -> Setting {
         Setting {
@@ -54,6 +60,7 @@ pub const PITCH: Setting = Setting::new("Pitch", 0x04, 16, 1, 32);
 pub const MAX_IPM: Setting = Setting::new("Max IPM", 0x05, 30, 1, 30);
 // Steps per second per second
 pub const ACCELERATION: Setting = Setting::new("Acceleration", 0x06, 1200, 200, 2400);
+pub const TRAVERSAL: Setting = Setting::new("Traversal IPM", 0x07, 10, 1, 30);
 
 /// Read settings and calculate how many steps do we make per inch
 pub fn steps_per_inch(flash: &FLASH) -> u32 {

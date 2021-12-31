@@ -119,7 +119,7 @@ impl<'a> EEPROM<'a> for stm32f1::stm32f103::FLASH {
         let first_page_address = unsafe { &EEPROM_START } as *const u32 as usize;
         let page_size = unsafe { &PAGE_SIZE } as *const u32 as usize;
         let page_count = unsafe { &EEPROM_PAGES } as *const u32 as usize;
-        EEPROMController::new(first_page_address, page_size, page_count, &self)
+        EEPROMController::new(first_page_address, page_size, page_count, self)
     }
 
     fn eeprom_params(
@@ -128,7 +128,7 @@ impl<'a> EEPROM<'a> for stm32f1::stm32f103::FLASH {
         page_size: usize,
         page_count: usize,
     ) -> EEPROMController<'a, Self> {
-        EEPROMController::new(first_page_address, page_size, page_count, &self)
+        EEPROMController::new(first_page_address, page_size, page_count, self)
     }
 }
 

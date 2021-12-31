@@ -1,5 +1,3 @@
-use stepgen;
-
 use crate::hal::StepperDriver;
 
 /// Direction of stepper motor movement
@@ -139,18 +137,18 @@ impl<S: StepperDriver> Stepper<S> {
                 self.preload_delay();
             }
             State::Stopped => panic!("Should not receive interrupts when stopped!"),
-            State::ThreadStart => panic!("Should not receive interrupts when waiting for the spindle!"),
+            State::ThreadStart => {
+                panic!("Should not receive interrupts when waiting for the spindle!")
+            }
             State::ThreadDelay if !self.driver.is_running() => {
                 // Finished our delay, need to initiate thread cutting
                 self.driver.set_timer_output(true);
                 self.move_to(self.threads.target_position()).unwrap();
             }
-            State::ThreadDelay => {
-                match self.threads.next_wait_delay() {
-                    0 => self.driver.set_last(),
-                    delay => self.driver.preload_delay(delay),
-                }
-            }
+            State::ThreadDelay => match self.threads.next_wait_delay() {
+                0 => self.driver.set_last(),
+                delay => self.driver.preload_delay(delay),
+            },
         };
     }
 
@@ -236,12 +234,18 @@ impl<S: StepperDriver> Stepper<S> {
 
     /// Move to given position. Note that no new move commands will be accepted while stepper is
     /// running. However, other target parameter, target speed, could be changed any time.
-    pub fn thread_start(&mut self, target: i32, steps_per_thread: u32, estimated_rpm: u32) -> Result<(), StepperError> {
+    pub fn thread_start(
+        &mut self,
+        target: i32,
+        steps_per_thread: u32,
+        estimated_rpm: u32,
+    ) -> Result<(), StepperError> {
         if self.state != State::Stopped {
             return Err(StepperError::NotStopped);
         }
 
-        self.threads.setup_thread_cutting(steps_per_thread, target, estimated_rpm)?;
+        self.threads
+            .setup_thread_cutting(steps_per_thread, target, estimated_rpm)?;
         let target_speed = self.threads.calculate_speed(estimated_rpm, 0);
         self.stepgen.set_target_speed(target_speed)?;
         self.state = State::ThreadStart;
@@ -264,7 +268,9 @@ impl<S: StepperDriver> Stepper<S> {
                     delay => self.driver.preload_delay(delay),
                 }
             }
-            State::Running { is_cutting_thread, .. } if is_cutting_thread => {
+            State::Running {
+                is_cutting_thread, ..
+            } if is_cutting_thread => {
                 let step = self.stepgen.current_step();
                 let steps_since_start = step - self.base_step;
                 let target_speed = self.threads.calculate_speed(rpm, steps_since_start);
