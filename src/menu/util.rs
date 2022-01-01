@@ -7,6 +7,7 @@ use stm32_hal::gpio::Pin;
 /// Run a "selection menu", a menu where one of the several items is selected. Items could be
 /// selected both by pressing "Fast" button or by pressing "Select" button for a short period.
 /// Pressing "Select" for longer acts as an "Exit" action (no selection is returned).
+#[inline(never)]
 pub fn run_selection<'a, T: core::fmt::Display>(
     r: &mut MenuResources,
     header: &str,
@@ -45,19 +46,18 @@ fn run_selection_internal<'a>(
     loop {
         let selected = usize::from(encoder.current());
         let current = labels(selected);
+        r.display.position(0, 0);
+        write!(r.display, "{: <16}", header).unwrap();
+        r.display.position(0, 1);
+        write!(r.display, "{: <16}", current).unwrap();
 
         let event = r.controls.read_event();
         match nav.check(r.estop, event) {
             Some(NavStatus::Exit) => return None,
             Some(NavStatus::Select) => return Some(selected),
-            _ if matches!(event, Event::Pressed(Button::Fast)) => return Some(selected),
+            None if matches!(event, Event::Pressed(Button::Fast)) => return Some(selected),
             _ => {}
         }
-
-        r.display.position(0, 0);
-        write!(r.display, "{: <16}", header).unwrap();
-        r.display.position(0, 1);
-        write!(r.display, "{: <16}", current).unwrap();
     }
 }
 
@@ -163,7 +163,7 @@ pub fn wait_proceed(r: &mut MenuResources) -> Option<()> {
         let event = r.controls.read_event();
         match nav.check(r.estop, event) {
             Some(NavStatus::Exit) => return None,
-            Some(NavStatus::Select) => return None,
+            Some(NavStatus::Select) => return Some(()),
             None if matches!(event, Event::Pressed(Button::Fast)) => return Some(()),
             _ => {}
         }

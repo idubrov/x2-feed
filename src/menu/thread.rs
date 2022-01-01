@@ -93,6 +93,7 @@ impl ThreadingOperation {
         self.thread = select_thread_size(r)?;
 
         // FIXME: allow using feed to go to the desired position precisely?
+        r.display.clear();
         r.display.position(0, 0);
         write!(r.display, "At shoulder?    ").unwrap();
         wait_proceed(r);
@@ -128,13 +129,12 @@ impl ThreadingOperation {
 }
 
 fn cut_thread_to(r: &mut MenuResources, thread: ThreadSize, position: i32) {
-    let rpm: u32 = r.shared.hall.lock(|hall| hall.rpm());
     let steps_per_inch = settings::steps_per_inch(r.flash);
     let steps_per_thread = thread.to_steps_per_thread(steps_per_inch);
     while let Err(err) = r
         .shared
         .stepper
-        .lock(|s| s.thread_start(position, steps_per_thread, rpm))
+        .lock(|s| s.thread_start(position, steps_per_thread, r.shared.hall.lock(|hall| hall.rpm())))
     {
         r.display.position(0, 0);
         match err {
@@ -181,11 +181,12 @@ enum ThreadSystem {
 
 impl core::fmt::Display for ThreadSystem {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.write_str(match self {
+        let str = match self {
             ThreadSystem::Inch => "Inch",
             ThreadSystem::Metric => "Metric",
             ThreadSystem::BritishAssociation => "BA",
-        })
+        };
+        f.pad(str)
     }
 }
 
@@ -249,6 +250,8 @@ fn capture_retract_position(r: &mut MenuResources, steps_per_inch: i32) -> Optio
     r.display.position(0, 0);
     write!(r.display, "Retract Distance").unwrap();
     let start = r.shared.stepper.lock(|s| s.position());
+    steputil::move_delta(5 * steps_per_inch / 10, &mut r.shared);
+    steputil::wait_stopped(&mut r.shared);
     loop {
         let delta = i32::from(deltaenc.delta());
         if delta != 0 {
@@ -274,7 +277,7 @@ fn capture_retract_position(r: &mut MenuResources, steps_per_inch: i32) -> Optio
         match nav.check(r.estop, event) {
             Some(NavStatus::Exit) => return None,
             Some(NavStatus::Select) => return Some(current),
-            _ if matches!(event, Event::Pressed(Button::Fast)) => return Some(current),
+            None if matches!(event, Event::Pressed(Button::Fast)) => return Some(current),
             _ => {}
         }
     }

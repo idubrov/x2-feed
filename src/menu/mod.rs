@@ -1,6 +1,6 @@
 use self::feed::FeedOperation;
 use self::thread::ThreadingOperation;
-use crate::hal::{Controls, Display, QuadEncoder, StepperDriverImpl};
+use crate::hal::{Controls, Display, QuadEncoder};
 use crate::settings;
 use rtic::Mutex;
 use stm32_hal::gpio::Pin;
