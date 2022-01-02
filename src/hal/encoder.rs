@@ -23,7 +23,7 @@ impl QuadEncoder {
         // Configure timer
         // Configure timer as rotary encoder
         // FIXME: was sms().encoder_ti2()
-        self.tim3.smcr.write(|w| w.sms().encoder_mode_2());
+        self.tim3.smcr.write(|w| w.sms().encoder_mode_3());
 
         // Count on rising edges
         self.tim3
@@ -49,17 +49,17 @@ impl QuadEncoder {
     /// Set rotary encoder limit. Note that this function is "unsafe" because it changes the
     /// configuration of the encoder without resetting it back.
     pub fn set_limit_unsafe(&mut self, limit: u16) {
-        self.tim3.arr.write(|w| w.arr().bits((limit * 2) - 1));
+        self.tim3.arr.write(|w| w.arr().bits((limit * 4) - 1));
     }
 
     /// Get current value of the rotary encoder.
     pub fn current(&self) -> u16 {
-        self.tim3.cnt.read().cnt().bits() / 2
+        (self.tim3.cnt.read().cnt().bits() + 1) / 4
     }
 
     /// Set current value of the rotary encoder.
     pub fn set_current(&mut self, pos: u16) {
-        self.tim3.cnt.write(|w| w.cnt().bits(pos * 2));
+        self.tim3.cnt.write(|w| w.cnt().bits(pos * 4));
     }
 
     /// Set `limit` and `current` value temporarily. Once return value is dropped, encoder is
