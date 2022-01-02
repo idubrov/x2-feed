@@ -1,9 +1,8 @@
 use self::feed::FeedOperation;
 use self::thread::ThreadingOperation;
-use crate::hal::{Controls, Display, QuadEncoder};
+use crate::hal::{Controls, Display, EStop, QuadEncoder};
 use crate::settings;
 use rtic::Mutex;
-use stm32_hal::gpio::Pin;
 use stm32f1::stm32f103::FLASH;
 
 pub struct MenuResources<'a> {
@@ -11,7 +10,7 @@ pub struct MenuResources<'a> {
     pub display: &'a mut Display,
     pub controls: &'a mut Controls,
     pub flash: &'a mut FLASH,
-    pub estop: &'a Pin,
+    pub estop: &'a mut EStop,
     pub shared: crate::app::idle::SharedResources<'a>,
     /// Stepper driver frequency (timer ticks per second), used for calculating acceleration time for threads
     pub driver_freq: u32,
@@ -102,7 +101,7 @@ impl MenuItem for LatheMenu {
         const LABELS: [&str; 3] = ["> Power Feed", "> Threading", "> Settings"];
 
         // Default menu item
-        self.feed.run(r);
+        self.thread.run(r);
         while let Some(pos) = crate::menu::util::run_selection_idx(r, "-- Select --", &LABELS, 0) {
             match pos {
                 0 => self.feed.run(r),

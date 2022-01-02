@@ -47,6 +47,9 @@ pub struct Stepper<S: StepperDriver> {
     threads: crate::threads::ThreadInfo,
     driver: S,
     reversed: bool,
+    // We never manually control screw on a the lathe, so we never want to disable the driver,
+    // to prevent accidental screw changes.
+    disable_at_stop: bool,
 
     base_step: u32,
     position: i32,
@@ -61,12 +64,13 @@ fn round16_8(delay: u32) -> u16 {
 }
 
 impl<S: StepperDriver> Stepper<S> {
-    pub fn new(freq: u32, driver: S) -> Stepper<S> {
+    pub fn new(freq: u32, driver: S, disable_at_stop: bool) -> Stepper<S> {
         Stepper {
             driver,
             stepgen: stepgen::Stepgen::new(freq),
             threads: crate::threads::ThreadInfo::new(freq),
             reversed: false,
+            disable_at_stop,
             base_step: 0,
             position: 0,
             state: State::Stopped,
@@ -122,7 +126,9 @@ impl<S: StepperDriver> Stepper<S> {
                 self.preload_delay();
             }
             State::Stopping(dir) if !self.driver.is_running() => {
-                self.driver.set_enable(false);
+                if self.disable_at_stop {
+                    self.driver.set_enable(false);
+                }
                 self.state = State::Stopped;
                 // FIXME: reset thread cutting info
 

@@ -1,8 +1,7 @@
-use crate::hal::{delay, Button, Event};
+use crate::hal::{delay, Button, Event, EStop};
 use crate::menu::MenuResources;
 use crate::settings;
 use core::fmt::Write;
-use stm32_hal::gpio::Pin;
 
 /// Run a "selection menu", a menu where one of the several items is selected. Items could be
 /// selected both by pressing "Fast" button or by pressing "Select" button for a short period.
@@ -61,6 +60,7 @@ fn run_selection_internal<'a>(
     }
 }
 
+
 pub fn run_setting(r: &mut MenuResources, setting: &settings::Setting) {
     r.display.clear();
 
@@ -101,8 +101,8 @@ impl Navigation {
     pub fn new() -> Self {
         Self { pressed_at: None }
     }
-    pub fn check(&mut self, estop: &Pin, event: Event) -> Option<NavStatus> {
-        if !estop.read() {
+    pub fn check(&mut self, estop: &EStop, event: Event) -> Option<NavStatus> {
+        if estop.is_emergency_stop() {
             panic!("*E-STOP*");
         }
 

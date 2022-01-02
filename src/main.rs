@@ -18,8 +18,8 @@
 
 use crate::hal::{Display, Screen};
 use core::panic::PanicInfo;
-use stm32_hal::gpio::Port;
 use stm32f1::stm32f103::Peripherals;
+use stm32f1xx_hal::prelude::*;
 
 mod config;
 mod font;
@@ -31,10 +31,7 @@ mod threads;
 
 #[rtic::app(device = stm32f1::stm32f103, peripherals = true)]
 mod app {
-    use crate::hal::{
-        delay, Controls, Display, Led, QuadEncoder, RpmSensor, Screen, StepperDriverImpl,
-        DRIVER_TICK_FREQUENCY,
-    };
+    use crate::hal::{delay, Controls, Display, Led, QuadEncoder, RpmSensor, Screen, StepperDriverImpl, DRIVER_TICK_FREQUENCY, EStop};
     use crate::menu::{LatheMenu, MenuItem, MenuResources, MillMenu};
     use crate::stepper::Stepper;
     use eeprom::EEPROM;
@@ -55,7 +52,7 @@ mod app {
         encoder: QuadEncoder,
         controls: Controls,
         flash: FLASH,
-        estop: Pin,
+        estop: EStop,
     }
 
     #[init]
@@ -118,36 +115,30 @@ mod app {
             pa14,
             pa15,
         ] = peripherals.GPIOA.into_bitband();
+        
+        let mut gpiob = peripherals.GPIOB.split();
+        let rs_pin = gpiob.pb1.into_push_pull_output(&mut gpiob.crl).erase();
+        let rw_pin = gpiob.pb10.into_push_pull_output(&mut gpiob.crh).erase();
+        let e_pin = gpiob.pb11.into_push_pull_output(&mut gpiob.crh).erase();
+        let db4 = gpiob.pb12.into_push_pull_output(&mut gpiob.crh).erase();
+        let db5 = gpiob.pb13.into_push_pull_output(&mut gpiob.crh).erase();
+        let db6 = gpiob.pb14.into_push_pull_output(&mut gpiob.crh).erase();
+        let db7 = gpiob.pb15.into_push_pull_output(&mut gpiob.crh).erase();
 
-        let [
-            estop,
-            // PB1 is RS
-            rs_pin,
-            pb2,
-            pb3,
-            pb4,
-            pb5,
-            pb6,
-            pb7,
-            pb8,
-            pb9,
-            // PB10 is RW
-            rw_pin,
-            // PB11 is E
-            e_pin,
-            // PB12-PB15 are DB4-DB7
-            db4,
-            db5,
-            db6,
-            db7,
-        ] = peripherals.GPIOB.into_bitband();
+        // "Passivate" unused pins (pull them down), to avoid them floating with noise.
+        gpiob.pb2.into_pull_down_input(&mut gpiob.crl);
+        // Used by debugger, no need to "passivate"
+        //gpiob.pb3.into_pull_down_input(&mut gpiob.crl);
+        //gpiob.pb4.into_pull_down_input(&mut gpiob.crl);
+        gpiob.pb5.into_pull_down_input(&mut gpiob.crl);
+        gpiob.pb6.into_pull_down_input(&mut gpiob.crl);
+        gpiob.pb7.into_pull_down_input(&mut gpiob.crl);
+        gpiob.pb8.into_pull_down_input(&mut gpiob.crh);
+        gpiob.pb9.into_pull_down_input(&mut gpiob.crh);
+
         passivate([
-            pa12, pa13, pa14, pa15, pb2, pb3, pb4, pb5, pb6, pb7, pb8, pb9,
+            pa12, pa13, pa14, pa15,
         ]);
-
-        // pull-up
-        estop.config().pull_up_down();
-        estop.on();
 
         // Initialize peripherals
         let driver =
@@ -156,9 +147,13 @@ mod app {
         let screen = Screen::new(rs_pin, rw_pin, e_pin, [db4, db5, db6, db7]);
         let encoder = QuadEncoder::new(peripherals.TIM3, encoder_dt_pin, encoder_clk_pin);
         let hall = RpmSensor::new(peripherals.TIM2, hall_pin);
-        let stepper = Stepper::new(DRIVER_TICK_FREQUENCY, driver);
+        let is_lathe = crate::settings::IS_LATHE.read(&peripherals.FLASH) != 0;
+        let stepper = Stepper::new(DRIVER_TICK_FREQUENCY, driver, !is_lathe);
         let mut display = Display::new(screen);
         let controls = Controls::new(left_btn, right_btn, fast_btn, encoder_btn);
+
+        // Pull-up e-stop (it's `1` when not active).
+        let estop = EStop::new(gpiob.pb0.into_pull_up_input(&mut gpiob.crl).erase());
 
         // Initialize EEPROM emulation
         peripherals.FLASH.eeprom().init().unwrap();
@@ -254,15 +249,20 @@ fn init_display(lcd: &mut Display) {
 #[inline(never)]
 #[panic_handler]
 pub fn begin_panic_handler(info: &PanicInfo<'_>) -> ! {
-    // Immediately disable driver outputs
-    let gpioa = unsafe { Peripherals::steal().GPIOA };
-    let [_, _, _, _, _, _, _, _, _, _, enable, _, _, _, _, _] = gpioa.into_bitband();
-    enable.write(false);
+    // Immediately disable driver outputs, just in case
+    let mut gpioa = unsafe { Peripherals::steal().GPIOA }.split();
+    gpioa.pa10.into_push_pull_output(&mut gpioa.crh).set_low();
 
     // Steal GPIOB and create another screen in an attempt to print some info
-    let gpiob = unsafe { Peripherals::steal().GPIOB };
-    let [_, rs_pin, _, _, _, _, _, _, _, _, rw_pin, e_pin, db4, db5, db6, db7] =
-        gpiob.into_bitband();
+    let mut gpiob = unsafe { Peripherals::steal().GPIOB }.split();
+    let rs_pin = gpiob.pb1.into_push_pull_output(&mut gpiob.crl).erase();
+    let rw_pin = gpiob.pb10.into_push_pull_output(&mut gpiob.crh).erase();
+    let e_pin = gpiob.pb11.into_push_pull_output(&mut gpiob.crh).erase();
+    let db4 = gpiob.pb12.into_push_pull_output(&mut gpiob.crh).erase();
+    let db5 = gpiob.pb13.into_push_pull_output(&mut gpiob.crh).erase();
+    let db6 = gpiob.pb14.into_push_pull_output(&mut gpiob.crh).erase();
+    let db7 = gpiob.pb15.into_push_pull_output(&mut gpiob.crh).erase();
+
     let screen = Screen::new(rs_pin, rw_pin, e_pin, [db4, db5, db6, db7]);
     let mut display = Display::new(screen);
 
