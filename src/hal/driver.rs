@@ -81,7 +81,7 @@ impl StepperDriverImpl {
         // Prescaler
         self.tim1.psc.write(|w| {
             w.psc()
-                .bits(((super::clock::FREQUENCY / DRIVER_TICK_FREQUENCY) - 1) as u16)
+                .bits(((crate::hal::FREQUENCY / DRIVER_TICK_FREQUENCY) - 1) as u16)
         });
 
         // Initialize timer

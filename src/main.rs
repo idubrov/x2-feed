@@ -32,14 +32,15 @@ mod threads;
 #[rtic::app(device = stm32f1::stm32f103, peripherals = true)]
 mod app {
     use crate::hal::{
-        clock, delay, Controls, Display, Led, QuadEncoder, RpmSensor, Screen, StepperDriverImpl,
+        delay, Controls, Display, Led, QuadEncoder, RpmSensor, Screen, StepperDriverImpl,
         DRIVER_TICK_FREQUENCY,
     };
     use crate::menu::{LatheMenu, MenuItem, MenuResources, MillMenu};
     use crate::stepper::Stepper;
     use eeprom::EEPROM;
     use stm32_hal::gpio::{Pin, Port};
-    use stm32f1::stm32f103::FLASH;
+    use stm32f1::stm32f103::{FLASH, Peripherals};
+    use stm32f1xx_hal::prelude::*;
 
     #[shared]
     struct Shared {
@@ -60,9 +61,7 @@ mod app {
     #[init]
     fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
         let mut core: cortex_m::Peripherals = cx.core;
-        let mut peripherals: stm32f1::stm32f103::Peripherals = cx.device;
-
-        clock::setup(&mut peripherals.RCC, &mut core.SYST, &mut peripherals.FLASH);
+        let peripherals: stm32f1::stm32f103::Peripherals = cx.device;
 
         // Enable peripherals
         peripherals.RCC.apb1enr.modify(|_, w| w.tim2en().enabled());
@@ -71,6 +70,23 @@ mod app {
         peripherals.RCC.apb2enr.modify(|_, w| w.iopaen().enabled());
         peripherals.RCC.apb2enr.modify(|_, w| w.iopben().enabled());
         peripherals.RCC.apb2enr.modify(|_, w| w.afioen().enabled());
+
+        let flash = unsafe { Peripherals::steal().FLASH };
+        let mut flash = flash.constrain();
+        let rcc = peripherals.RCC.constrain();
+        let _clocks = rcc
+          .cfgr
+          .use_hse(8.mhz())
+          .sysclk(72.mhz())
+          .pclk1(36.mhz())
+          .pclk2(72.mhz())
+          .hclk(72.mhz())
+          .freeze(&mut flash.acr);
+
+        // We use our own timer which keeps syst running (since we also use it for measuring delays)
+        // Note that SYST is running at the frequency of AHB/8, which is 9Mhz (72Mhz SYSCLK)
+        core.SYST.enable_counter();
+        core.SYST.set_reload(0x00ff_ffff);
 
         let [
             // PA0 is hall encoder

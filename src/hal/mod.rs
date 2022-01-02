@@ -1,4 +1,3 @@
-pub mod clock;
 mod controls;
 pub mod delay;
 mod driver;
@@ -7,7 +6,7 @@ mod led;
 mod rpm;
 mod screen;
 
-pub use self::clock::FREQUENCY;
+pub const FREQUENCY: u32 = 72_000_000;
 pub use self::controls::{Button, Controls, ControlsState, Event};
 pub use self::driver::DRIVER_TICK_FREQUENCY;
 pub use self::driver::{StepperDriver, StepperDriverImpl};
