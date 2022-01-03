@@ -1,5 +1,4 @@
-use crate::hal::{Button, Event};
-use crate::menu::util::{printable_position, wait_proceed, NavStatus, Navigation};
+use crate::menu::util::{printable_position, wait_loop};
 use crate::menu::{steputil, MenuItem, MenuResources};
 use crate::stepper::StepperError;
 use crate::{settings, stepper};
@@ -56,16 +55,14 @@ impl core::fmt::Display for ThreadSize {
 
 pub struct ThreadingOperation {
     thread: ThreadSize,
-    /// Phase for starting the thread cutting, from `0` to `steps_per_thread`. Defines how many steps
-    /// do we need to offset our target. If `0`, end of the thread (`left` position) would be
-    /// exactly at the location of the magnetic sensor. If `steps_per_thread / 2`, it will be offset
-    /// by 180 degree.
-    /// FIXME: use 0..360, for degrees?
-    phase: u32,
-    /// Left limit
-    left: i32,
-    /// Right limit
-    right: i32,
+    /// Phase for starting the thread cutting, from `0` to `steps_per_thread`. Defined as amount of
+    /// degrees we should offset our thread start. `180` would mean thread will have exactly half
+    /// pitch offset.
+    phase: u16,
+    /// End of the thread position
+    shoulder_pos: i32,
+    /// Retraction position
+    retract_pos: i32,
 }
 
 impl ThreadingOperation {
@@ -73,8 +70,8 @@ impl ThreadingOperation {
         ThreadingOperation {
             thread: ThreadSize::Tpi(18),
             phase: 0,
-            left: 0,
-            right: 0,
+            shoulder_pos: 0,
+            retract_pos: 0,
         }
     }
 }
@@ -96,45 +93,45 @@ impl ThreadingOperation {
         r.display.clear();
         r.display.position(0, 0);
         write!(r.display, "At shoulder?    ").unwrap();
-        wait_proceed(r);
+        wait_loop(r.controls, r.estop, || {});
 
-        self.left = r.shared.stepper.lock(|s| s.position());
-        self.right = capture_retract_position(r, steps_per_inch)?;
+        self.shoulder_pos = r.shared.stepper.lock(|s| s.position());
+        self.retract_pos = capture_retract_position(r, steps_per_inch)?;
 
         // FIXME: warn if not enough space to accelerate?
 
         // Main thread cutting thread
         loop {
             // Retract to the starting position (if needed)
-            if r.shared.stepper.lock(|s| s.position()) != self.right {
+            if r.shared.stepper.lock(|s| s.position()) != self.retract_pos {
                 r.display.position(0, 0);
                 write!(r.display, "Retracting...   ").unwrap();
-                r.shared.stepper.lock(|s| s.move_to(self.right)).unwrap();
+                r.shared.stepper.lock(|s| s.move_to(self.retract_pos)).unwrap();
                 steputil::wait_stopped(&mut r.shared);
             }
 
             // Cutting thread
             r.display.position(0, 0);
             write!(r.display, "Start cutting?  ").unwrap();
-            wait_proceed(r)?;
+            self.phase = capture_phase(r, self.phase)?;
 
-            cut_thread_to(r, self.thread, self.left);
+            cut_thread_to(r, self.thread, self.shoulder_pos, self.phase);
 
             // Ask to retract back
             r.display.position(0, 0);
             write!(r.display, "Retract?        ").unwrap();
-            wait_proceed(r)?;
+            self.phase = capture_phase(r, self.phase)?;
         }
     }
 }
 
-fn cut_thread_to(r: &mut MenuResources, thread: ThreadSize, position: i32) {
+fn cut_thread_to(r: &mut MenuResources, thread: ThreadSize, position: i32, phase: u16) {
     let steps_per_inch = settings::steps_per_inch(r.flash);
     let steps_per_thread = thread.to_steps_per_thread(steps_per_inch);
     while let Err(err) = r
         .shared
         .stepper
-        .lock(|s| s.thread_start(position, steps_per_thread, r.shared.hall.lock(|hall| hall.rpm())))
+        .lock(|s| s.thread_start(position, steps_per_thread, phase, r.shared.hall.lock(|hall| hall.rpm())))
     {
         r.display.position(0, 0);
         match err {
@@ -149,13 +146,12 @@ fn cut_thread_to(r: &mut MenuResources, thread: ThreadSize, position: i32) {
 
         r.display.position(0, 1);
         write!(r.display, "Retry?          ").unwrap();
-        wait_proceed(r);
+        wait_loop(r.controls, r.estop, || {});
     }
 
     r.display.position(0, 0);
     write!(r.display, "Cutting...      ").unwrap();
 
-    // FIXME: allow using encoder to adjust the thread phase
     loop {
         let (state, last_error) = r
             .shared
@@ -244,15 +240,13 @@ fn select_thread_size(r: &mut MenuResources) -> Option<ThreadSize> {
 
 fn capture_retract_position(r: &mut MenuResources, steps_per_inch: i32) -> Option<i32> {
     let mut deltaenc = r.encoder.delta_encoder();
-    let mut nav = Navigation::new();
-
     r.display.clear();
     r.display.position(0, 0);
     write!(r.display, "Retract Distance").unwrap();
     let start = r.shared.stepper.lock(|s| s.position());
     steputil::move_delta(5 * steps_per_inch / 10, &mut r.shared);
     steputil::wait_stopped(&mut r.shared);
-    loop {
+    wait_loop(r.controls, r.estop, || {
         let delta = i32::from(deltaenc.delta());
         if delta != 0 {
             // Update stepper position; unit is 0.100 inch
@@ -272,13 +266,16 @@ fn capture_retract_position(r: &mut MenuResources, steps_per_inch: i32) -> Optio
             printable_position(distance, steps_per_inch)
         )
         .unwrap();
+        current
+    })
+}
 
-        let event = r.controls.read_event();
-        match nav.check(r.estop, event) {
-            Some(NavStatus::Exit) => return None,
-            Some(NavStatus::Select) => return Some(current),
-            None if matches!(event, Event::Pressed(Button::Fast)) => return Some(current),
-            _ => {}
-        }
-    }
+fn capture_phase(r: &mut MenuResources, phase: u16) -> Option<u16> {
+    let encoder = r.encoder.set_current_limit(phase, 360);
+    wait_loop(r.controls, r.estop, || {
+        let phase = encoder.current();
+        r.display.position(0, 1);
+        write!(r.display, "Phase: {} deg     ", phase).unwrap();
+        phase
+    })
 }

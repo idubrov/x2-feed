@@ -1,4 +1,4 @@
-use crate::hal::{delay, Button, Event, EStop};
+use crate::hal::{delay, Button, Event, EStop, Controls};
 use crate::menu::MenuResources;
 use crate::settings;
 use core::fmt::Write;
@@ -39,25 +39,17 @@ fn run_selection_internal<'a>(
     initial: usize,
     total: usize,
 ) -> Option<usize> {
-    let mut nav: Navigation = Navigation::new();
     let encoder = r.encoder.set_current_limit(initial as u16, total as u16);
     r.display.clear();
-    loop {
+    wait_loop(r.controls, r.estop, || {
         let selected = usize::from(encoder.current());
-        let current = labels(selected);
+        let label = labels(selected);
         r.display.position(0, 0);
         write!(r.display, "{: <16}", header).unwrap();
         r.display.position(0, 1);
-        write!(r.display, "{: <16}", current).unwrap();
-
-        let event = r.controls.read_event();
-        match nav.check(r.estop, event) {
-            Some(NavStatus::Exit) => return None,
-            Some(NavStatus::Select) => return Some(selected),
-            None if matches!(event, Event::Pressed(Button::Fast)) => return Some(selected),
-            _ => {}
-        }
-    }
+        write!(r.display, "{: <16}", label).unwrap();
+        selected
+    })
 }
 
 
@@ -94,29 +86,28 @@ pub enum NavStatus {
 }
 
 pub struct Navigation {
-    pressed_at: Option<u32>,
+    /// Duration for which `Select` button was pressed.
+    pressed_duration: Option<delay::Duration>,
 }
 
 impl Navigation {
     pub fn new() -> Self {
-        Self { pressed_at: None }
+        Self { pressed_duration: None }
     }
     pub fn check(&mut self, estop: &EStop, event: Event) -> Option<NavStatus> {
         if estop.is_emergency_stop() {
             panic!("*E-STOP*");
         }
 
-        if let Some(pressed_at) = self.pressed_at {
-            if delay::duration_us(pressed_at) >= EXIT_DURATION_US {
+        if let Some(ref mut pressed_duration) = self.pressed_duration {
+            if pressed_duration.duration() > EXIT_DURATION_US {
                 return Some(NavStatus::Exit);
             }
         }
         match event {
-            Event::Pressed(Button::Encoder) => self.pressed_at = Some(delay::current()),
+            Event::Pressed(Button::Encoder) => self.pressed_duration = Some(delay::Duration::new()),
             Event::Unpressed(Button::Encoder) => {
-                let was_pressed = self.pressed_at.is_some();
-                self.pressed_at = None;
-                if was_pressed {
+                if core::mem::take(&mut self.pressed_duration).is_some() {
                     return Some(NavStatus::Select);
                 }
             }
@@ -154,17 +145,20 @@ impl core::fmt::Display for PrintablePosition {
     }
 }
 
-/// Wait until operator signals to continue current operation either by pressing `Select` button
-/// (for a short period; long period indicates "exit") or by pressing "Fast" button
-pub fn wait_proceed(r: &mut MenuResources) -> Option<()> {
+/// Run a "wait" loop: execute given callback in a loop until operator presses `Select` button
+/// or `Fast` button. If `Select` is pressed for a long period, the function returns `None`
+/// (indicating "exit"). Otherwise, the return value is the value returned from the callback.
+pub fn wait_loop<R>(controls: &mut Controls, estop: &mut EStop, mut cb: impl FnMut() -> R) -> Option<R> {
     let mut nav = Navigation::new();
     loop {
+        let result = cb();
+
         // We use `Fast` button for continuing the operation instead of typical `Encoder` button.
-        let event = r.controls.read_event();
-        match nav.check(r.estop, event) {
+        let event = controls.read_event();
+        match nav.check(estop, event) {
             Some(NavStatus::Exit) => return None,
-            Some(NavStatus::Select) => return Some(()),
-            None if matches!(event, Event::Pressed(Button::Fast)) => return Some(()),
+            Some(NavStatus::Select) => return Some(result),
+            None if matches!(event, Event::Pressed(Button::Fast)) => return Some(result),
             _ => {}
         }
     }

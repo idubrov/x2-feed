@@ -10,7 +10,6 @@ pub fn move_delta(delta: i32, r: &mut crate::app::idle::SharedResources) {
         .unwrap()
 }
 
-// FIXME: why not regular loop?
 pub fn wait_stopped(r: &mut crate::app::idle::SharedResources) {
     let mut is_stopped = false;
     while !is_stopped {

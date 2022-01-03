@@ -244,6 +244,7 @@ impl<S: StepperDriver> Stepper<S> {
         &mut self,
         target: i32,
         steps_per_thread: u32,
+        phase: u16,
         estimated_rpm: u32,
     ) -> Result<(), StepperError> {
         if self.state != State::Stopped {
@@ -251,7 +252,7 @@ impl<S: StepperDriver> Stepper<S> {
         }
 
         self.threads
-            .setup_thread_cutting(steps_per_thread, target, estimated_rpm)?;
+            .setup_thread_cutting(target, steps_per_thread, phase, estimated_rpm)?;
         let target_speed = self.threads.calculate_speed(estimated_rpm, 0);
         self.stepgen.set_target_speed(target_speed)?;
         self.state = State::ThreadStart;

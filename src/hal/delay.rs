@@ -24,9 +24,29 @@ pub fn current() -> u32 {
     SYST::get_current()
 }
 
-/// Duration between current tick and given start tick in microseconds
-/// Note that SYST overflows every ~1.8 second, so duration longer than
-/// that could not be measured.
-pub fn duration_us(start: u32) -> u32 {
-    start.wrapping_sub(current()) / 9
+/// Utility to measure durations using SysTick timer. For correctness requires that
+/// `Duration::duration` to be called often, with time between two calls less than
+/// time required to overflow SysTick timer.
+pub struct Duration {
+    last: u32,
+    duration: u32,
+}
+
+impl Duration {
+    pub fn new() -> Self {
+        Duration {
+            last: current(),
+            duration: 0,
+        }
+    }
+
+    /// Check the duration passed since this helper was created. Note that this function should be
+    /// called with intervals between calls less than time required for SysTick timer to go through
+    /// the whole interval
+    pub fn duration(&mut self) -> u32 {
+        let current = current();
+        self.duration += (self.last.wrapping_sub(current) & 0xffffff) / 9;
+        self.last = current;
+        self.duration
+    }
 }

@@ -38,8 +38,9 @@ impl ThreadInfo {
     /// minimal once stepper is fully accelerated.
     pub fn setup_thread_cutting(
         &mut self,
-        steps_per_thread: u32,
         target: i32,
+        steps_per_thread: u32,
+        phase: u16,
         estimated_rpm: u32,
     ) -> Result<(), stepgen::Error> {
         self.steps_per_thread = steps_per_thread;
@@ -54,7 +55,8 @@ impl ThreadInfo {
         while !stepgen.is_at_speed() {
             let _delay = stepgen.next().unwrap();
         }
-        let steps_to_accelerate = stepgen.current_step();
+        // Steps to accelerate is amount of steps we need to get up to the speed plus phase offset
+        let steps_to_accelerate = stepgen.current_step() + u32::from(phase) * steps_per_thread / 360;
 
         let revolutions_to_accelerate = (steps_to_accelerate / steps_per_thread) + 1;
         let start_at_step = revolutions_to_accelerate * steps_per_thread - steps_to_accelerate;
