@@ -2,8 +2,8 @@ use self::feed::FeedOperation;
 use self::thread::ThreadingOperation;
 use crate::hal::{Controls, Display, EStop, QuadEncoder};
 use crate::settings;
-use rtic::Mutex;
 use eeprom::EEPROM;
+use rtic::Mutex;
 
 pub struct MenuResources<'a> {
     pub encoder: &'a mut QuadEncoder,
@@ -61,7 +61,11 @@ impl<const N: usize> MenuItem for SettingsMenuTemplate<N> {
             crate::menu::util::run_selection(r, "-- Settings --", &self.settings, initial)
         {
             crate::menu::util::run_setting(r, setting);
-            initial = self.settings.iter().position(|s| s.label() == setting.label()).unwrap_or(0);
+            initial = self
+                .settings
+                .iter()
+                .position(|s| s.label() == setting.label())
+                .unwrap_or(0);
         }
     }
 }

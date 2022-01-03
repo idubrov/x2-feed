@@ -58,9 +58,11 @@ use core::mem::size_of;
 use core::option::Option;
 use core::ptr;
 use core::result::Result;
-use stm32f1xx_hal::flash::{SectorSize, Result as FlashResult, Error as FlashError, Parts, FlashWriter, FlashSize};
-use stm32f1xx_hal::stm32::FLASH;
+use stm32f1xx_hal::flash::{
+    Error as FlashError, FlashSize, FlashWriter, Parts, Result as FlashResult, SectorSize,
+};
 use stm32f1xx_hal::prelude::*;
+use stm32f1xx_hal::stm32::FLASH;
 
 type HalfWord = u16; // STM32 allows programming half-words
 type Word = u32;
@@ -319,7 +321,13 @@ impl EEPROM {
         false
     }
 
-    fn program_item(&mut self, page: u32, pos: u32, tag: HalfWord, data: HalfWord) -> FlashResult<()> {
+    fn program_item(
+        &mut self,
+        page: u32,
+        pos: u32,
+        tag: HalfWord,
+        data: HalfWord,
+    ) -> FlashResult<()> {
         let item_addr = self.item_offset(page, pos);
 
         // Not found -- write the value first, so if we fail for whatever reason,

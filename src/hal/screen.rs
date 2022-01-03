@@ -16,7 +16,11 @@ impl Screen {
 }
 
 fn into_pin_state(bit: bool) -> PinState {
-    if bit { PinState::High } else { PinState::Low }
+    if bit {
+        PinState::High
+    } else {
+        PinState::Low
+    }
 }
 
 impl lcd::Hardware for Screen {

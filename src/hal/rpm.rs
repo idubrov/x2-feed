@@ -1,5 +1,5 @@
 use stm32f1::stm32f103::TIM2;
-use stm32f1xx_hal::gpio::{CRL, Input, Pin, PullUp};
+use stm32f1xx_hal::gpio::{Input, Pin, PullUp, CRL};
 
 const HALL_TICK_FREQUENCY: u32 = 100_000; // 0.01 ms
 const HALL_MAX_RPM: u32 = 6000;
@@ -32,9 +32,10 @@ impl RpmSensor {
     }
 
     fn init(&mut self) {
-        self.tim2
-            .psc
-            .write(|w| w.psc().bits(((crate::hal::FREQUENCY / HALL_TICK_FREQUENCY) - 1) as u16));
+        self.tim2.psc.write(|w| {
+            w.psc()
+                .bits(((crate::hal::FREQUENCY / HALL_TICK_FREQUENCY) - 1) as u16)
+        });
         self.tim2.arr.write(|w| w.arr().bits(0xffffu16));
 
         // Only output register is supported, see https://github.com/japaric/svd2rust/issues/16

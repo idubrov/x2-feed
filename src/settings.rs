@@ -1,5 +1,5 @@
-use stm32f1xx_hal::flash::Result as FlashResult;
 use eeprom::EEPROM;
+use stm32f1xx_hal::flash::Result as FlashResult;
 
 #[derive(Clone, Copy)]
 pub struct Setting {
@@ -39,8 +39,7 @@ impl Setting {
     }
 
     pub fn write(&self, eeprom: &mut EEPROM, value: u16) -> FlashResult<()> {
-        eeprom
-            .write(self.tag, value.max(self.min).min(self.max))
+        eeprom.write(self.tag, value.max(self.min).min(self.max))
     }
 
     pub fn label(&self) -> &'static str {

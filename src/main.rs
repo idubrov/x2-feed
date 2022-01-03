@@ -31,12 +31,15 @@ mod threads;
 
 #[rtic::app(device = stm32f1::stm32f103, peripherals = true)]
 mod app {
-    use crate::hal::{delay, Controls, Display, Led, QuadEncoder, RpmSensor, Screen, StepperDriverImpl, DRIVER_TICK_FREQUENCY, EStop};
+    use crate::hal::{
+        delay, Controls, Display, EStop, Led, QuadEncoder, RpmSensor, Screen, StepperDriverImpl,
+        DRIVER_TICK_FREQUENCY,
+    };
     use crate::menu::{LatheMenu, MenuItem, MenuResources, MillMenu};
     use crate::stepper::Stepper;
-    use stm32f1::stm32f103::{Peripherals};
-    use stm32f1xx_hal::prelude::*;
     use eeprom::EEPROM;
+    use stm32f1::stm32f103::Peripherals;
+    use stm32f1xx_hal::prelude::*;
 
     #[shared]
     struct Shared {
@@ -71,13 +74,13 @@ mod app {
         let mut flash = flash.constrain();
         let rcc = peripherals.RCC.constrain();
         let _clocks = rcc
-          .cfgr
-          .use_hse(8.mhz())
-          .sysclk(72.mhz())
-          .pclk1(36.mhz())
-          .pclk2(72.mhz())
-          .hclk(72.mhz())
-          .freeze(&mut flash.acr);
+            .cfgr
+            .use_hse(8.mhz())
+            .sysclk(72.mhz())
+            .pclk1(36.mhz())
+            .pclk2(72.mhz())
+            .hclk(72.mhz())
+            .freeze(&mut flash.acr);
 
         // We use our own timer which keeps syst running (since we also use it for measuring delays)
         // Note that SYST is running at the frequency of AHB/8, which is 9Mhz (72Mhz SYSCLK)

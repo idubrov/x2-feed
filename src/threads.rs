@@ -56,7 +56,8 @@ impl ThreadInfo {
             let _delay = stepgen.next().unwrap();
         }
         // Steps to accelerate is amount of steps we need to get up to the speed plus phase offset
-        let steps_to_accelerate = stepgen.current_step() + u32::from(phase) * steps_per_thread / 360;
+        let steps_to_accelerate =
+            stepgen.current_step() + u32::from(phase) * steps_per_thread / 360;
 
         let revolutions_to_accelerate = (steps_to_accelerate / steps_per_thread) + 1;
         let start_at_step = revolutions_to_accelerate * steps_per_thread - steps_to_accelerate;

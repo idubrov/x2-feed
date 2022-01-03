@@ -1,4 +1,4 @@
-use crate::hal::{delay, Button, Event, EStop, Controls};
+use crate::hal::{delay, Button, Controls, EStop, Event};
 use crate::menu::MenuResources;
 use crate::settings;
 use core::fmt::Write;
@@ -52,7 +52,6 @@ fn run_selection_internal<'a>(
     })
 }
 
-
 pub fn run_setting(r: &mut MenuResources, setting: &settings::Setting) {
     r.display.clear();
 
@@ -92,7 +91,9 @@ pub struct Navigation {
 
 impl Navigation {
     pub fn new() -> Self {
-        Self { pressed_duration: None }
+        Self {
+            pressed_duration: None,
+        }
     }
     pub fn check(&mut self, estop: &EStop, event: Event) -> Option<NavStatus> {
         if estop.is_emergency_stop() {
@@ -148,7 +149,11 @@ impl core::fmt::Display for PrintablePosition {
 /// Run a "wait" loop: execute given callback in a loop until operator presses `Select` button
 /// or `Fast` button. If `Select` is pressed for a long period, the function returns `None`
 /// (indicating "exit"). Otherwise, the return value is the value returned from the callback.
-pub fn wait_loop<R>(controls: &mut Controls, estop: &mut EStop, mut cb: impl FnMut() -> R) -> Option<R> {
+pub fn wait_loop<R>(
+    controls: &mut Controls,
+    estop: &mut EStop,
+    mut cb: impl FnMut() -> R,
+) -> Option<R> {
     let mut nav = Navigation::new();
     loop {
         let result = cb();

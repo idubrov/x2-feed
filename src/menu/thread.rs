@@ -106,7 +106,10 @@ impl ThreadingOperation {
             if r.shared.stepper.lock(|s| s.position()) != self.retract_pos {
                 r.display.position(0, 0);
                 write!(r.display, "Retracting...   ").unwrap();
-                r.shared.stepper.lock(|s| s.move_to(self.retract_pos)).unwrap();
+                r.shared
+                    .stepper
+                    .lock(|s| s.move_to(self.retract_pos))
+                    .unwrap();
                 steputil::wait_stopped(&mut r.shared);
             }
 
@@ -128,11 +131,14 @@ impl ThreadingOperation {
 fn cut_thread_to(r: &mut MenuResources, thread: ThreadSize, position: i32, phase: u16) {
     let steps_per_inch = settings::steps_per_inch(r.eeprom);
     let steps_per_thread = thread.to_steps_per_thread(steps_per_inch);
-    while let Err(err) = r
-        .shared
-        .stepper
-        .lock(|s| s.thread_start(position, steps_per_thread, phase, r.shared.hall.lock(|hall| hall.rpm())))
-    {
+    while let Err(err) = r.shared.stepper.lock(|s| {
+        s.thread_start(
+            position,
+            steps_per_thread,
+            phase,
+            r.shared.hall.lock(|hall| hall.rpm()),
+        )
+    }) {
         r.display.position(0, 0);
         match err {
             StepperError::StepgenError(StepgenError::TooSlow) => {
