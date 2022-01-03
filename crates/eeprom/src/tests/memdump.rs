@@ -5,9 +5,9 @@ use std::mem::size_of;
 use std::string::String;
 use std::vec::Vec;
 
-pub fn dump(vec: &Vec<u16>, page_size: usize) -> String {
+pub fn dump(vec: &Vec<u16>, page_size: u32) -> String {
     let mut buf: String = String::new();
-    for (page, p) in vec.chunks(page_size / size_of::<u16>()).enumerate() {
+    for (page, p) in vec.chunks((page_size as usize) / size_of::<u16>()).enumerate() {
         if page != 0 {
             writeln!(buf).unwrap();
         }

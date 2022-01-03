@@ -12,9 +12,8 @@
 //! # pub fn main() {
 //! use stm32_hal::flash::FlashResult;
 //! # struct MockFlash;
-//! # impl <'a> EEPROM<'a> for MockFlash {
-//! #   fn eeprom(&'a self) -> eeprom::EEPROM<'a, Self> { unimplemented!() }
-//! #   fn eeprom_params(&'a self, first_page_address: usize, page_size: usize, page_count: usize) -> eeprom::EEPROM<'a, Self> { unimplemented!() }
+//! # impl <'a> EEPROMExt for &'a mut MockFlash {
+//! #   fn eeprom(&'a self) -> eeprom::EEPROM<Self> { unimplemented!() }
 //! # }
 //! # impl Flash for MockFlash {
 //! # fn is_locked(&self) -> bool { unimplemented!() }
@@ -45,7 +44,7 @@
 //!   is exactly one active page.
 #![no_std]
 #![warn(missing_docs)]
-#![deny(warnings)]
+//#![deny(warnings)]
 
 #[cfg(test)]
 #[macro_use]
@@ -54,15 +53,16 @@ extern crate std;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+type FlashError = ();
+#[cfg(test)]
+type FlashResult<T> = Result<T, FlashError>;
+
 use core::mem::size_of;
 use core::option::Option;
-use core::ptr;
 use core::result::Result;
-use stm32f1xx_hal::flash::{
-    Error as FlashError, FlashSize, FlashWriter, Parts, Result as FlashResult, SectorSize,
-};
-use stm32f1xx_hal::prelude::*;
-use stm32f1xx_hal::stm32::FLASH;
+#[cfg(feature = "stm32f103")]
+use stm32f1xx_hal::flash::{Error as FlashError, FlashSize, Parts, Result as FlashResult, SectorSize};
 
 type HalfWord = u16; // STM32 allows programming half-words
 type Word = u32;
@@ -84,60 +84,103 @@ extern "C" {
     static EEPROM_PAGES: u32;
 }
 
-/// EEPROM controller. Uses Flash for implementing key-value storage for 16-bit data values.
-pub struct EEPROM {
-    first_page_offset: u32,
-    page_size: SectorSize,
-    // Amount of items per page (full words)
-    page_items: u32,
-    page_count: u32,
-    flash: Parts,
-}
-
-impl EEPROM {
+/// EEPROM-capable peripheral.
+pub trait EEPROMExt where Self: Sized {
     /// Create default EEPROM controller. Uses variables defined by linker script to determine EEPROM location:
     ///
     /// * `_eeprom_start` should be an address of the first page
     /// * `_page_size` should be the FLASH page size (in bytes)
     /// * `_eeprom_pages` should be the amount of FLASH pages to be used for EEPROM (2 is the minimum)
     #[cfg(feature = "default-eeprom")]
-    pub fn new_default(flash: FLASH) -> EEPROM {
+    fn eeprom(self) -> EEPROM<Self>;
+}
+
+/// Low-level trait used by EEPROM implementation to access flash memory.
+pub trait Flash {
+    /// Read half-word (16-bit) value at a specified address. `address` must be an address of
+    /// a location in the Flash memory aligned to two bytes.
+    fn read(&mut self, offset: u32) -> FlashResult<HalfWord>;
+
+    /// Write half-word (16-bit) value at a specified address. `address` must be an address of
+    /// a location in the Flash memory aligned to two bytes.
+    fn write(&mut self, offset: u32, data: u16) -> FlashResult<()>;
+
+    /// Erase specified flash page. `address` must be an address of a beginning of the page in
+    /// Flash memory.
+    fn page_erase(&mut self, address: u32) -> FlashResult<()>;
+}
+
+#[cfg(feature = "stm32f103")]
+impl <'a> EEPROMExt for &'a mut Parts {
+    #[cfg(feature = "default-eeprom")]
+    fn eeprom(self) -> EEPROM<Self> {
         let first_page_offset = unsafe { &EEPROM_START } as *const u32 as u32;
-        let page_size = unsafe { &PAGE_SIZE } as *const u32 as usize;
+        let page_size = unsafe { &PAGE_SIZE } as *const u32 as u32;
         debug_assert_eq!(page_size & 0x3FF, 0,
                          "EEPROM page size should be a multiple of 1K! Check your linker script for `_page_size`");
-        let sector_size = match page_size {
-            1024 => SectorSize::Sz1K,
-            2048 => SectorSize::Sz2K,
-            4096 => SectorSize::Sz4K,
-            _ => unreachable!(),
-        };
         let page_count = unsafe { &EEPROM_PAGES } as *const u32 as u32;
-        EEPROM::new(first_page_offset, sector_size, page_count, flash)
-    }
 
-    /// Create a new EEPROM controller to work with Flash memory abstracted by `FlashT` type.
-    pub fn new(
-        first_page_offset: u32,
-        sector_size: SectorSize,
-        page_count: u32,
-        flash: FLASH,
-    ) -> EEPROM {
         debug_assert!(page_count >= 2,
                       "EEPROM page count must be greater or equal to 2! Check your linker script for `_eeprom_pages`");
         // Tests fake FLASH memory
         #[cfg(not(test))]
         debug_assert_eq!(
-            first_page_offset % (sector_bytes(sector_size) as u32),
+            first_page_offset % page_size,
             0,
             "EEPROM first_page pointer does not point at the beginning of the FLASH page"
         );
+        EEPROM::new(first_page_offset, page_size, page_count, self)
+    }
+}
+
+#[cfg(feature = "stm32f103")]
+impl <'a> Flash for &'a mut Parts {
+    fn read(&mut self, address: u32) -> FlashResult<HalfWord> {
+        let writer = self
+          // FIXME: sector size / flash size?
+          .writer(SectorSize::Sz1K, FlashSize::Sz64K);
+        let data = writer.read(address, 2)?;
+        Ok(u16::from_le_bytes([data[0], data[1]]))
+    }
+
+    fn write(&mut self, address: u32, data: HalfWord) -> FlashResult<()> {
+        self
+          // FIXME: sector size / flash size?
+          .writer(SectorSize::Sz1K, FlashSize::Sz64K)
+          .write(address, &data.to_le_bytes())
+    }
+
+    fn page_erase(&mut self, address: u32) -> FlashResult<()> {
+        self
+          // FIXME: sector size / flash size?
+          .writer(SectorSize::Sz1K, FlashSize::Sz64K)
+          .page_erase(address)
+    }
+}
+
+/// EEPROM controller. Uses Flash for implementing key-value storage for 16-bit data values.
+pub struct EEPROM<F> {
+    first_page_offset: u32,
+    page_size: u32,
+    // Amount of items per page (full words)
+    page_items: u32,
+    page_count: u32,
+    flash: F,
+}
+
+impl <F> EEPROM<F> where F: Flash {
+    fn new(
+        first_page_offset: u32,
+        page_size: u32,
+        page_count: u32,
+        flash: F
+    ) -> Self {
         EEPROM {
             first_page_offset,
-            page_size: sector_size,
-            page_items: sector_bytes(sector_size) / ITEM_SIZE,
+            page_size,
+            page_items: page_size / ITEM_SIZE,
             page_count,
-            flash: flash.constrain(),
+            flash,
         }
     }
 
@@ -164,8 +207,8 @@ impl EEPROM {
     /// Erase all values stored in EEPROM
     pub fn erase(&mut self) -> FlashResult<()> {
         for page in 0..self.page_count {
-            let start_offset = self.first_page_offset + page * sector_bytes(self.page_size);
-            self.writer().page_erase(start_offset)?;
+            let start_offset = self.first_page_offset + page * self.page_size;
+            self.flash.page_erase(start_offset)?;
         }
 
         // Mark the first page as the active
@@ -244,7 +287,7 @@ impl EEPROM {
         Ok(tgt_page)
     }
 
-    fn search(&self, page: u32, max_item: u32, tag: HalfWord) -> Option<HalfWord> {
+    fn search(&mut self, page: u32, max_item: u32, tag: HalfWord) -> Option<HalfWord> {
         for item in (1..max_item).rev() {
             let (t, data) = self.read_item_tuple(page, item);
             if t == tag {
@@ -265,14 +308,12 @@ impl EEPROM {
 
     fn page_status(&mut self, page: u32) -> HalfWord {
         let page_offset = self.page_offset(page);
-        let writer = self.writer();
-        let data = writer.read(page_offset, 2).unwrap();
-        u16::from_le_bytes([data[0], data[1]])
+        self.flash.read(page_offset).unwrap()
     }
 
     fn set_page_status(&mut self, page: u32, status: HalfWord) -> FlashResult<()> {
         let page_offset = self.page_offset(page);
-        self.writer().write(page_offset, &status.to_le_bytes())
+        self.flash.write(page_offset, status)
     }
 
     fn page_offset(&self, page: u32) -> u32 {
@@ -291,11 +332,14 @@ impl EEPROM {
         self.first_page_offset + (page * self.page_items + item) * ITEM_SIZE
     }
 
-    fn read_item(&self, page: u32, item: u32) -> Word {
-        unsafe { ptr::read(self.item_offset(page, item) as *mut Word) }
+    fn read_item(&mut self, page: u32, item: u32) -> Word {
+        let offset = self.item_offset(page, item);
+        let tag = self.flash.read(offset).unwrap();
+        let data = self.flash.read(offset + 2).unwrap();
+        (u32::from(data) << 16) + u32::from(tag)
     }
 
-    fn read_item_tuple(&self, page: u32, item: u32) -> (HalfWord, HalfWord) {
+    fn read_item_tuple(&mut self, page: u32, item: u32) -> (HalfWord, HalfWord) {
         let item = self.read_item(page, item);
         ((item & 0xffff) as HalfWord, (item >> 16) as HalfWord)
     }
@@ -303,7 +347,7 @@ impl EEPROM {
     fn erase_page(&mut self, page: u32) -> FlashResult<()> {
         if self.is_page_dirty(page) {
             let page_offset = self.page_offset(page);
-            let result = self.writer().page_erase(page_offset);
+            let result = self.flash.page_erase(page_offset);
             debug_assert!(!self.is_page_dirty(page));
             result
         } else {
@@ -311,7 +355,7 @@ impl EEPROM {
         }
     }
 
-    fn is_page_dirty(&self, page: u32) -> bool {
+    fn is_page_dirty(&mut self, page: u32) -> bool {
         for item in 0..self.page_items {
             let value = self.read_item(page, item);
             if value != ERASED_ITEM {
@@ -332,20 +376,8 @@ impl EEPROM {
 
         // Not found -- write the value first, so if we fail for whatever reason,
         // we don't have the default value of `0xffff` for the item with `tag`.
-        self.writer().write(item_addr + 2, &data.to_le_bytes())?;
-        self.writer().write(item_addr, &tag.to_le_bytes())?;
+        self.flash.write(item_addr + 2, data)?;
+        self.flash.write(item_addr, tag)?;
         Ok(())
-    }
-
-    fn writer(&mut self) -> FlashWriter {
-        self.flash.writer(self.page_size, FlashSize::Sz64K)
-    }
-}
-
-fn sector_bytes(sector_size: SectorSize) -> u32 {
-    match sector_size {
-        SectorSize::Sz1K => 1024,
-        SectorSize::Sz2K => 2048,
-        SectorSize::Sz4K => 4096,
     }
 }

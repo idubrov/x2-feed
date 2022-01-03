@@ -5,7 +5,7 @@ version = "0.2.0-alpha"
 edition = "2021"
 
 [dependencies]
-stm32f1xx-hal = {version = "0.8.0", features = [ "stm32f103", "medium" ], optional = true }
+stm32f1xx-hal = {version = "0.8.0", features = [ "stm32f103" ], optional = true }
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"

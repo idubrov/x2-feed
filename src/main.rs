@@ -37,9 +37,10 @@ mod app {
     };
     use crate::menu::{LatheMenu, MenuItem, MenuResources, MillMenu};
     use crate::stepper::Stepper;
-    use eeprom::EEPROM;
+    use eeprom::EEPROMExt;
     use stm32f1::stm32f103::Peripherals;
     use stm32f1xx_hal::prelude::*;
+    use stm32f1xx_hal::flash;
 
     #[shared]
     struct Shared {
@@ -53,7 +54,7 @@ mod app {
         led: Led,
         encoder: QuadEncoder,
         controls: Controls,
-        eeprom: EEPROM,
+        flash: flash::Parts,
         estop: EStop,
     }
 
@@ -130,8 +131,8 @@ mod app {
 
         // Initialize EEPROM emulation
         // FIXME: constants?..
-        let mut eeprom = EEPROM::new_default(peripherals.FLASH);
-        eeprom.init().unwrap();
+        let mut flash = peripherals.FLASH.constrain();
+        flash.eeprom().init().unwrap();
 
         // Initialize peripherals
         let driver =
@@ -140,7 +141,7 @@ mod app {
         let screen = Screen::new(rs_pin, rw_pin, e_pin, [db4, db5, db6, db7]);
         let encoder = QuadEncoder::new(peripherals.TIM3, encoder_dt_pin, encoder_clk_pin);
         let hall = RpmSensor::new(peripherals.TIM2, hall_pin);
-        let is_lathe = crate::settings::IS_LATHE.read(&mut eeprom) != 0;
+        let is_lathe = crate::settings::IS_LATHE.read(&mut flash) != 0;
         let stepper = Stepper::new(DRIVER_TICK_FREQUENCY, driver, !is_lathe);
         let mut display = Display::new(screen);
         let controls = Controls::new(left_btn, right_btn, fast_btn, encoder_btn);
@@ -157,7 +158,7 @@ mod app {
         (
             Shared { stepper, hall },
             Local {
-                eeprom,
+                flash,
                 display,
                 led,
                 encoder,
@@ -168,19 +169,19 @@ mod app {
         )
     }
 
-    #[idle(local = [led, encoder, controls, display, eeprom, estop], shared = [stepper, hall])]
+    #[idle(local = [led, encoder, controls, display, flash, estop], shared = [stepper, hall])]
     fn idle(context: idle::Context) -> ! {
         let mut r = MenuResources {
             encoder: context.local.encoder,
             display: context.local.display,
             controls: context.local.controls,
-            eeprom: context.local.eeprom,
+            flash: context.local.flash,
             shared: context.shared,
             estop: context.local.estop,
             driver_freq: DRIVER_TICK_FREQUENCY,
         };
 
-        let is_lathe = crate::settings::IS_LATHE.read(r.eeprom) != 0;
+        let is_lathe = crate::settings::IS_LATHE.read(r.flash) != 0;
         if is_lathe {
             let mut menu = LatheMenu::new();
             loop {

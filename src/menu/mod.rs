@@ -2,14 +2,14 @@ use self::feed::FeedOperation;
 use self::thread::ThreadingOperation;
 use crate::hal::{Controls, Display, EStop, QuadEncoder};
 use crate::settings;
-use eeprom::EEPROM;
 use rtic::Mutex;
+use stm32f1xx_hal::flash;
 
 pub struct MenuResources<'a> {
     pub encoder: &'a mut QuadEncoder,
     pub display: &'a mut Display,
     pub controls: &'a mut Controls,
-    pub eeprom: &'a mut EEPROM,
+    pub flash: &'a mut flash::Parts,
     pub estop: &'a mut EStop,
     pub shared: crate::app::idle::SharedResources<'a>,
     /// Stepper driver frequency (timer ticks per second), used for calculating acceleration time for threads
@@ -20,12 +20,12 @@ impl MenuResources<'_> {
     /// Reload stepper settings from EEPROM. Sets acceleration, reverse flag and speed. Speed
     /// is set to the default traversal speed.
     fn reload_stepper_settings(&mut self) {
-        let reversed = settings::IS_REVERSED.read(self.eeprom) != 0;
-        let acceleration = (u32::from(settings::ACCELERATION.read(self.eeprom))
-            * u32::from(settings::MICROSTEPS.read(self.eeprom)))
+        let reversed = settings::IS_REVERSED.read(self.flash) != 0;
+        let acceleration = (u32::from(settings::ACCELERATION.read(self.flash))
+            * u32::from(settings::MICROSTEPS.read(self.flash)))
             << 8;
-        let traversal = u32::from(settings::TRAVERSAL.read(self.eeprom));
-        let steps_per_inch = settings::steps_per_inch(self.eeprom);
+        let traversal = u32::from(settings::TRAVERSAL.read(self.flash));
+        let steps_per_inch = settings::steps_per_inch(self.flash);
         let speed = ((traversal * steps_per_inch) << 8) / 60;
 
         self.shared.stepper.lock(|s| {

@@ -245,11 +245,11 @@ impl FeedOperation {
         r.reload_stepper_settings();
 
         // Pre-compute steps-per-inch
-        let steps_per_inch = settings::steps_per_inch(r.eeprom);
+        let steps_per_inch = settings::steps_per_inch(r.flash);
 
         let mut encoder = r
             .encoder
-            .set_current_limit(self.slow_speed.rate() - 1, settings::MAX_IPM.read(r.eeprom));
+            .set_current_limit(self.slow_speed.rate() - 1, settings::MAX_IPM.read(r.flash));
 
         r.display.clear();
 
