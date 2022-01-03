@@ -1,17 +1,16 @@
 use stm32f1::stm32f103::TIM3;
-use stm32f1xx_hal::gpio::{ErasedPin, Floating, Input};
+use stm32f1xx_hal::gpio::{Floating, Input, Pin, CRL};
 
-type Pin = ErasedPin<Input<Floating>>;
+type DtPin = Pin<Input<Floating>, CRL, 'A', 6>;
+type ClkPin = Pin<Input<Floating>, CRL, 'A', 7>;
 
 pub struct QuadEncoder {
     tim3: TIM3,
-    dt: Pin,
-    clk: Pin,
 }
 
 impl QuadEncoder {
-    pub fn new(tim3: TIM3, dt: Pin, clk: Pin) -> QuadEncoder {
-        let encoder = QuadEncoder { tim3, dt, clk };
+    pub fn new(tim3: TIM3, _dt: DtPin, _clk: ClkPin) -> QuadEncoder {
+        let encoder = QuadEncoder { tim3 };
         encoder.init();
         encoder
     }
@@ -19,6 +18,7 @@ impl QuadEncoder {
     // Note that we require an explicit ownership of I/O port peripheral to guard against
     // concurrent access when we modify shared register of the peripheral (CRL)
     fn init(&self) {
+        //Timer::tim3().qei()
         // Configure timer
         // Configure timer as rotary encoder
         // FIXME: was sms().encoder_ti2()

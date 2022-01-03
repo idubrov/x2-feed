@@ -1,5 +1,5 @@
 use stm32f1::stm32f103::TIM2;
-use stm32f1xx_hal::gpio::{ErasedPin, Input, PullUp};
+use stm32f1xx_hal::gpio::{CRL, Input, Pin, PullUp};
 
 const HALL_TICK_FREQUENCY: u32 = 100_000; // 0.01 ms
 const HALL_MAX_RPM: u32 = 6000;
@@ -14,20 +14,16 @@ const MIN_PERIOD: u32 = 60 * HALL_TICK_FREQUENCY / HALL_MAX_RPM;
 // its high 16 bits. If computed period is longer than that, it is assumed that spindle is stopped.
 const MAX_MSB: u32 = ((60 * HALL_TICK_FREQUENCY) / HALL_MIN_RPM + 0xffffu32) >> 16;
 
-type Pin = ErasedPin<Input<PullUp>>;
-
 pub struct RpmSensor {
     tim2: TIM2,
-    pin: Pin,
     captured: u32,
     msb: u32,
 }
 
 impl RpmSensor {
-    pub fn new(tim2: TIM2, pin: Pin) -> RpmSensor {
+    pub fn new(tim2: TIM2, _pin: Pin<Input<PullUp>, CRL, 'A', 0>) -> RpmSensor {
         let mut sensor = RpmSensor {
             tim2,
-            pin,
             captured: 0,
             msb: 0,
         };

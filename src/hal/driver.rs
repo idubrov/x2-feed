@@ -1,8 +1,8 @@
 use stm32f1::stm32f103::TIM1;
-use stm32f1xx_hal::gpio::{Alternate, ErasedPin, OpenDrain, Output};
+use stm32f1xx_hal::gpio::{Alternate, ErasedPin, OpenDrain, Output, Pin as PinT, CRH};
 
 type Pin = ErasedPin<Output<OpenDrain>>;
-type AlternatePin = ErasedPin<Alternate<OpenDrain>>;
+type StepPin = PinT<Alternate<OpenDrain>, CRH, 'A', 8>;
 
 pub const DRIVER_TICK_FREQUENCY: u32 = 1_000_000; // 1us timer resolution
 
@@ -50,17 +50,15 @@ const STEP_PULSE_WIDTH_TICKS: u16 = ns2ticks(75);
 
 pub struct StepperDriverImpl {
     tim1: TIM1,
-    step: AlternatePin,
     dir: Pin,
     enable: Pin,
     reset: Pin,
 }
 
 impl StepperDriverImpl {
-    pub fn new(tim1: TIM1, step: AlternatePin, dir: Pin, enable: Pin, reset: Pin) -> StepperDriverImpl {
+    pub fn new(tim1: TIM1, _step: StepPin, dir: Pin, enable: Pin, reset: Pin) -> StepperDriverImpl {
         let mut driver = StepperDriverImpl {
             tim1,
-            step,
             dir,
             enable,
             reset,

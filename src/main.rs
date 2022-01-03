@@ -85,15 +85,15 @@ mod app {
         core.SYST.set_reload(0x00ff_ffff);
 
         let mut gpioa = peripherals.GPIOA.split();
-        let hall_pin = gpioa.pa0.into_pull_up_input(&mut gpioa.crl).erase();
+        let hall_pin = gpioa.pa0.into_pull_up_input(&mut gpioa.crl);
         let left_btn = gpioa.pa1.erase();
         let right_btn = gpioa.pa2.erase();
         let fast_btn = gpioa.pa3.erase();
         let led_pin = gpioa.pa4.into_push_pull_output(&mut gpioa.crl).erase();
         let encoder_btn = gpioa.pa5.erase();
-        let encoder_dt_pin = gpioa.pa6.erase();
-        let encoder_clk_pin = gpioa.pa7.erase();
-        let step_pin = gpioa.pa8.into_alternate_open_drain(&mut gpioa.crh).erase();
+        let encoder_dt_pin = gpioa.pa6;
+        let encoder_clk_pin = gpioa.pa7;
+        let step_pin = gpioa.pa8.into_alternate_open_drain(&mut gpioa.crh);
         let dir_pin = gpioa.pa9.into_open_drain_output(&mut gpioa.crh).erase();
         let enable_pin = gpioa.pa10.into_open_drain_output(&mut gpioa.crh).erase();
         let reset_pin = gpioa.pa11.into_open_drain_output(&mut gpioa.crh).erase();
