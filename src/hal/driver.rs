@@ -1,5 +1,8 @@
-use stm32_hal::gpio::Pin;
 use stm32f1::stm32f103::TIM1;
+use stm32f1xx_hal::gpio::{Alternate, ErasedPin, OpenDrain, Output};
+
+type Pin = ErasedPin<Output<OpenDrain>>;
+type AlternatePin = ErasedPin<Alternate<OpenDrain>>;
 
 pub const DRIVER_TICK_FREQUENCY: u32 = 1_000_000; // 1us timer resolution
 
@@ -42,18 +45,19 @@ const fn ns2ticks(ns: u32) -> u16 {
     ((ns + NANOS_IN_SECOND - 1) / NANOS_IN_SECOND) as u16
 }
 
+/// Width of the step pulse we send.
 const STEP_PULSE_WIDTH_TICKS: u16 = ns2ticks(75);
 
 pub struct StepperDriverImpl {
     tim1: TIM1,
-    step: Pin,
+    step: AlternatePin,
     dir: Pin,
     enable: Pin,
     reset: Pin,
 }
 
 impl StepperDriverImpl {
-    pub fn new(tim1: TIM1, step: Pin, dir: Pin, enable: Pin, reset: Pin) -> StepperDriverImpl {
+    pub fn new(tim1: TIM1, step: AlternatePin, dir: Pin, enable: Pin, reset: Pin) -> StepperDriverImpl {
         let mut driver = StepperDriverImpl {
             tim1,
             step,
@@ -68,15 +72,10 @@ impl StepperDriverImpl {
     // Note that we require an explicit ownership of I/O port peripheral to guard against
     // concurrent access when we modify shared register of the peripheral (CRH)
     fn init(&mut self) {
-        self.step.write(true);
-        self.dir.write(true);
-        self.enable.write(false);
-        self.reset.write(false); // Start in reset mode
-
-        self.step.config().output50().open_drain().alternate();
-        self.dir.config().output50().open_drain();
-        self.enable.config().output50().open_drain();
-        self.reset.config().output50().open_drain();
+        self.dir.set_high();
+        self.enable.set_low();
+        // Start in reset mode
+        self.reset.set_low();
 
         // Prescaler
         self.tim1.psc.write(|w| {
@@ -139,14 +138,18 @@ impl StepperDriverImpl {
         self.tim1.dier.write(|w| w.uie().set_bit());
 
         // Enable the driver
-        self.reset.write(true);
+        self.reset.set_high();
     }
 }
 
 impl StepperDriver for StepperDriverImpl {
     // Controls
     fn set_enable(&mut self, enable: bool) {
-        self.enable.write(enable);
+        if enable {
+            self.enable.set_high();
+        } else {
+            self.enable.set_low();
+        }
     }
 
     // Low-level timer output control: enable/disable PWM channel
@@ -155,7 +158,11 @@ impl StepperDriver for StepperDriverImpl {
     }
 
     fn set_direction(&mut self, dir: bool) {
-        self.dir.write(dir);
+        if dir {
+            self.dir.set_high();
+        } else {
+            self.dir.set_low();
+        }
     }
 
     // Pulse generation

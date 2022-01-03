@@ -1,4 +1,6 @@
-use stm32_hal::gpio::Pin;
+use stm32f1xx_hal::gpio::{ErasedPin, Floating, Input};
+
+type Pin = ErasedPin<Input<Floating>>;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ControlsState {
@@ -32,24 +34,16 @@ pub struct Controls {
 
 impl Controls {
     pub fn new(left: Pin, right: Pin, fast: Pin, encoder: Pin) -> Controls {
-        let controls = Controls {
+        Controls {
             pins: [left, right, fast, encoder],
             last: [false; 4],
-        };
-        controls.init();
-        controls
-    }
-
-    fn init(&self) {
-        for pin in &self.pins {
-            pin.config().input().floating();
         }
     }
 
     pub fn state(&self) -> ControlsState {
         let mut pressed: [bool; 4] = [false; 4];
         for (idx, pin) in self.pins.iter().enumerate() {
-            pressed[idx] = pin.read();
+            pressed[idx] = pin.is_high();
         }
 
         ControlsState {
@@ -66,7 +60,7 @@ impl Controls {
     /// Only handles one pin at a time.
     pub fn read_event(&mut self) -> Event {
         for (idx, pin) in self.pins.iter().enumerate() {
-            let state = pin.read();
+            let state = pin.is_high();
             if state && !self.last[idx] {
                 self.last[idx] = true;
                 return Event::Pressed(BUTTONS[idx]);

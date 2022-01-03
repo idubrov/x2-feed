@@ -1,5 +1,7 @@
-use stm32_hal::gpio::Pin;
 use stm32f1::stm32f103::TIM3;
+use stm32f1xx_hal::gpio::{ErasedPin, Floating, Input};
+
+type Pin = ErasedPin<Input<Floating>>;
 
 pub struct QuadEncoder {
     tim3: TIM3,
@@ -17,9 +19,6 @@ impl QuadEncoder {
     // Note that we require an explicit ownership of I/O port peripheral to guard against
     // concurrent access when we modify shared register of the peripheral (CRL)
     fn init(&self) {
-        self.dt.config().floating();
-        self.clk.config().floating();
-
         // Configure timer
         // Configure timer as rotary encoder
         // FIXME: was sms().encoder_ti2()
@@ -54,12 +53,12 @@ impl QuadEncoder {
 
     /// Get current value of the rotary encoder.
     pub fn current(&self) -> u16 {
-        (self.tim3.cnt.read().cnt().bits() + 1) / 4
+        self.tim3.cnt.read().cnt().bits() / 4
     }
 
     /// Set current value of the rotary encoder.
     pub fn set_current(&mut self, pos: u16) {
-        self.tim3.cnt.write(|w| w.cnt().bits(pos * 4));
+        self.tim3.cnt.write(|w| w.cnt().bits(pos * 4 + 1));
     }
 
     /// Set `limit` and `current` value temporarily. Once return value is dropped, encoder is

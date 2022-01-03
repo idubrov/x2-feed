@@ -35,7 +35,6 @@ mod app {
     use crate::menu::{LatheMenu, MenuItem, MenuResources, MillMenu};
     use crate::stepper::Stepper;
     use eeprom::EEPROM;
-    use stm32_hal::gpio::{Pin, Port};
     use stm32f1::stm32f103::{FLASH, Peripherals};
     use stm32f1xx_hal::prelude::*;
 
@@ -85,37 +84,27 @@ mod app {
         core.SYST.enable_counter();
         core.SYST.set_reload(0x00ff_ffff);
 
-        let [
-            // PA0 is hall encoder
-            hall_pin,
-            // PA1 is left
-            left_btn,
-            // PA2 is right
-            right_btn,
-            // PA3 is fast
-            fast_btn,
-            // PA4 is led
-            led_pin,
-            // PA5 is encoder button
-            encoder_btn,
-            // PA6 is DT
-            encoder_dt_pin,
-            // PA7 is CLK
-            encoder_clk_pin,
-            // PA8 is step
-            step_pin,
-            // PA9 is dir
-            dir_pin,
-            // PA10 is enable
-            enable_pin,
-            // PA11 is reset
-            reset_pin,
-            pa12,
-            pa13,
-            pa14,
-            pa15,
-        ] = peripherals.GPIOA.into_bitband();
-        
+        let mut gpioa = peripherals.GPIOA.split();
+        let hall_pin = gpioa.pa0.into_pull_up_input(&mut gpioa.crl).erase();
+        let left_btn = gpioa.pa1.erase();
+        let right_btn = gpioa.pa2.erase();
+        let fast_btn = gpioa.pa3.erase();
+        let led_pin = gpioa.pa4.into_push_pull_output(&mut gpioa.crl).erase();
+        let encoder_btn = gpioa.pa5.erase();
+        let encoder_dt_pin = gpioa.pa6.erase();
+        let encoder_clk_pin = gpioa.pa7.erase();
+        let step_pin = gpioa.pa8.into_alternate_open_drain(&mut gpioa.crh).erase();
+        let dir_pin = gpioa.pa9.into_open_drain_output(&mut gpioa.crh).erase();
+        let enable_pin = gpioa.pa10.into_open_drain_output(&mut gpioa.crh).erase();
+        let reset_pin = gpioa.pa11.into_open_drain_output(&mut gpioa.crh).erase();
+
+        // "Passivate" unused pins (pull them down), to avoid them floating with noise.
+        gpioa.pa12.into_pull_down_input(&mut gpioa.crh);
+        // Used by debugger, no need to "passivate"
+        //gpioa.pa13.into_pull_down_input(&mut gpioa.crh);
+        //gpioa.pa14.into_pull_down_input(&mut gpioa.crh);
+        //gpioa.pa15.into_pull_down_input(&mut gpioa.crh);
+
         let mut gpiob = peripherals.GPIOB.split();
         let rs_pin = gpiob.pb1.into_push_pull_output(&mut gpiob.crl).erase();
         let rw_pin = gpiob.pb10.into_push_pull_output(&mut gpiob.crh).erase();
@@ -135,10 +124,6 @@ mod app {
         gpiob.pb7.into_pull_down_input(&mut gpiob.crl);
         gpiob.pb8.into_pull_down_input(&mut gpiob.crh);
         gpiob.pb9.into_pull_down_input(&mut gpiob.crh);
-
-        passivate([
-            pa12, pa13, pa14, pa15,
-        ]);
 
         // Initialize peripherals
         let driver =
@@ -202,13 +187,6 @@ mod app {
             loop {
                 menu.run(&mut r);
             }
-        }
-    }
-
-    fn passivate<const T: usize>(pins: [Pin; T]) {
-        for pin in pins {
-            pin.config().input().pull_up_down();
-            pin.on();
         }
     }
 
