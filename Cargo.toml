@@ -13,7 +13,6 @@ cortex-m-rt = "0.7.1"
 cortex-m-rtic = "1.0.0"
 stm32f1 = { version = "0.14.0", features = ["stm32f103"] }
 eeprom = { version = "0.2.0-alpha", path = "crates/eeprom", features = ["stm32f103", "default-eeprom"] }
-stm32-hal = { version = "0.3.0-alpha", path = "crates/stm32-hal" }
 lcd = { version = "0.5.0-alpha", path = "crates/lcd" }
 stepgen = { version = "0.2.0-alpha", path = "crates/stepgen" }
 
@@ -34,5 +33,4 @@ members = [
     "crates/eeprom",
     "crates/lcd",
     "crates/stepgen",
-    "crates/stm32-hal",
 ]

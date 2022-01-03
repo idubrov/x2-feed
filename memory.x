@@ -9,4 +9,5 @@ MEMORY
 }
 
 _eeprom_start = ORIGIN(EEPROM);
+_eeprom_offset = LENGTH(FLASH);
 _eeprom_end = ORIGIN(EEPROM) + LENGTH(EEPROM);

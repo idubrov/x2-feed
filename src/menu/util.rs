@@ -57,7 +57,7 @@ pub fn run_setting(r: &mut MenuResources, setting: &settings::Setting) {
     r.display.clear();
 
     let (min, max) = setting.range();
-    let orig = setting.read(r.flash);
+    let orig = setting.read(r.eeprom);
     let encoder = r.encoder.set_current_limit(orig - min, max - min + 1);
     loop {
         if let Event::Unpressed(Button::Encoder) = r.controls.read_event() {
@@ -72,7 +72,7 @@ pub fn run_setting(r: &mut MenuResources, setting: &settings::Setting) {
 
     let current = encoder.current() + min;
     if current != orig {
-        setting.write(r.flash, current).unwrap();
+        setting.write(r.eeprom, current).unwrap();
     }
 }
 

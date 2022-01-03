@@ -1,4 +1,4 @@
-use super::{EEPROMController, EEPROM};
+use super::{EEPROM, EEPROM};
 use std::cell::RefCell;
 use std::mem::size_of;
 use std::vec::Vec;
@@ -83,8 +83,8 @@ impl<'a> EEPROM<'a> for MockFlash
 where
     MockFlash: 'a,
 {
-    fn eeprom(&'a self) -> EEPROMController<'a, Self> {
-        EEPROMController::new(
+    fn eeprom(&'a self) -> EEPROM<'a, Self> {
+        EEPROM::new(
             self.flash_mem.borrow().as_ptr() as usize,
             self.page_size,
             self.page_count,
@@ -97,12 +97,12 @@ where
         _first_page_address: usize,
         _page_size: usize,
         _page_count: usize,
-    ) -> EEPROMController<'a, Self> {
+    ) -> EEPROM<'a, Self> {
         unimplemented!()
     }
 }
 
-fn test(initial: &str, expected: &str, cb: fn(&EEPROMController<MockFlash>)) {
+fn test(initial: &str, expected: &str, cb: fn(&EEPROM<MockFlash>)) {
     let mcu = MockFlash::load(initial, 1024, 2);
     let eeprom = mcu.eeprom();
 

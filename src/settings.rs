@@ -1,6 +1,5 @@
+use stm32f1xx_hal::flash::Result as FlashResult;
 use eeprom::EEPROM;
-use stm32_hal::flash::FlashResult;
-use stm32f1::stm32f103::FLASH;
 
 #[derive(Clone, Copy)]
 pub struct Setting {
@@ -13,7 +12,7 @@ pub struct Setting {
 
 impl core::fmt::Display for Setting {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.write_str(self.label)
+        f.pad(self.label)
     }
 }
 
@@ -32,17 +31,15 @@ impl Setting {
         (self.min, self.max)
     }
 
-    pub fn read(&self, flash: &FLASH) -> u16 {
-        flash
-            .eeprom()
+    pub fn read(&self, eeprom: &mut EEPROM) -> u16 {
+        eeprom
             .read(self.tag)
             .map(|v| v.max(self.min).min(self.max))
             .unwrap_or(self.default)
     }
 
-    pub fn write(&self, flash: &FLASH, value: u16) -> FlashResult {
-        flash
-            .eeprom()
+    pub fn write(&self, eeprom: &mut EEPROM, value: u16) -> FlashResult<()> {
+        eeprom
             .write(self.tag, value.max(self.min).min(self.max))
     }
 
@@ -63,6 +60,6 @@ pub const ACCELERATION: Setting = Setting::new("Acceleration", 0x06, 1200, 200, 
 pub const TRAVERSAL: Setting = Setting::new("Traversal IPM", 0x07, 10, 1, 30);
 
 /// Read settings and calculate how many steps do we make per inch
-pub fn steps_per_inch(flash: &FLASH) -> u32 {
-    u32::from(PITCH.read(flash)) * u32::from(MICROSTEPS.read(flash)) * STEPS_PER_ROTATION
+pub fn steps_per_inch(eeprom: &mut EEPROM) -> u32 {
+    u32::from(PITCH.read(eeprom)) * u32::from(MICROSTEPS.read(eeprom)) * STEPS_PER_ROTATION
 }

@@ -85,7 +85,7 @@ impl MenuItem for ThreadingOperation {
 impl ThreadingOperation {
     fn run_impl(&mut self, r: &mut MenuResources) -> Option<()> {
         r.reload_stepper_settings();
-        let steps_per_inch = settings::steps_per_inch(r.flash) as i32;
+        let steps_per_inch = settings::steps_per_inch(r.eeprom) as i32;
 
         self.thread = select_thread_size(r)?;
 
@@ -126,7 +126,7 @@ impl ThreadingOperation {
 }
 
 fn cut_thread_to(r: &mut MenuResources, thread: ThreadSize, position: i32, phase: u16) {
-    let steps_per_inch = settings::steps_per_inch(r.flash);
+    let steps_per_inch = settings::steps_per_inch(r.eeprom);
     let steps_per_thread = thread.to_steps_per_thread(steps_per_inch);
     while let Err(err) = r
         .shared

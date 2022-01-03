@@ -11,7 +11,7 @@ pub fn capture_limit(r: &mut MenuResources, label: &'static str) -> (Option<i32>
     let mut nav = Navigation::new();
 
     // Pre-compute steps-per-inch
-    let steps_per_inch = settings::steps_per_inch(r.flash) as i32;
+    let steps_per_inch = settings::steps_per_inch(r.eeprom) as i32;
 
     loop {
         let pos = r.shared.stepper.lock(|s| s.position());

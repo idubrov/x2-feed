@@ -13,8 +13,8 @@
 //! use stm32_hal::flash::FlashResult;
 //! # struct MockFlash;
 //! # impl <'a> EEPROM<'a> for MockFlash {
-//! #   fn eeprom(&'a self) -> eeprom::EEPROMController<'a, Self> { unimplemented!() }
-//! #   fn eeprom_params(&'a self, first_page_address: usize, page_size: usize, page_count: usize) -> eeprom::EEPROMController<'a, Self> { unimplemented!() }
+//! #   fn eeprom(&'a self) -> eeprom::EEPROM<'a, Self> { unimplemented!() }
+//! #   fn eeprom_params(&'a self, first_page_address: usize, page_size: usize, page_count: usize) -> eeprom::EEPROM<'a, Self> { unimplemented!() }
 //! # }
 //! # impl Flash for MockFlash {
 //! # fn is_locked(&self) -> bool { unimplemented!() }
@@ -54,30 +54,27 @@ extern crate std;
 #[cfg(test)]
 mod tests;
 
-use stm32_hal::flash::Flash;
-
 use core::mem::size_of;
 use core::option::Option;
 use core::ptr;
 use core::result::Result;
+use stm32f1xx_hal::flash::{SectorSize, Result as FlashResult, Error as FlashError, Parts, FlashWriter, FlashSize};
+use stm32f1xx_hal::stm32::FLASH;
+use stm32f1xx_hal::prelude::*;
 
 type HalfWord = u16; // STM32 allows programming half-words
 type Word = u32;
-type FlashResult = stm32_hal::flash::FlashResult;
-type FlashError = stm32_hal::flash::FlashError;
 
 const ACTIVE_PAGE_MARKER: HalfWord = 0xABCD;
 const ERASED_ITEM: Word = 0xffff_ffff; // two u16 half-words
-#[cfg(not(test))]
-const FLASH_START: usize = 0x800_0000;
 
 // Each item is 16-bit tag plus 16-bit value
-const ITEM_SIZE: usize = size_of::<Word>();
+const ITEM_SIZE: u32 = size_of::<Word>() as u32;
 
 // Default EEPROM (should be defined by the linker script, if feature is enabled)
 #[cfg(all(feature = "default-eeprom", feature = "stm32f103"))]
 extern "C" {
-    #[link_name = "_eeprom_start"]
+    #[link_name = "_eeprom_offset"]
     static EEPROM_START: u32;
     #[link_name = "_page_size"]
     static PAGE_SIZE: u32;
@@ -85,102 +82,66 @@ extern "C" {
     static EEPROM_PAGES: u32;
 }
 
-/// EEPROM-capable peripheral.
-pub trait EEPROM<'a>
-where
-    Self: Flash,
-    Self: Sized,
-{
+/// EEPROM controller. Uses Flash for implementing key-value storage for 16-bit data values.
+pub struct EEPROM {
+    first_page_offset: u32,
+    page_size: SectorSize,
+    // Amount of items per page (full words)
+    page_items: u32,
+    page_count: u32,
+    flash: Parts,
+}
+
+impl EEPROM {
     /// Create default EEPROM controller. Uses variables defined by linker script to determine EEPROM location:
     ///
     /// * `_eeprom_start` should be an address of the first page
     /// * `_page_size` should be the FLASH page size (in bytes)
     /// * `_eeprom_pages` should be the amount of FLASH pages to be used for EEPROM (2 is the minimum)
     #[cfg(feature = "default-eeprom")]
-    fn eeprom(&'a self) -> EEPROMController<'a, Self>;
-
-    /// Create EEPROM controller with given parameters:
-    ///
-    /// * `first_page` should be an address of the first page to use for EEPROM
-    /// * `page_size` should be the page size (in bytes)
-    /// * `page_count` should be the amount of FLASH pages to be used for EEPROM (2 is the minimum)
-    fn eeprom_params(
-        &'a self,
-        first_page_address: usize,
-        page_size: usize,
-        page_count: usize,
-    ) -> EEPROMController<'a, Self>;
-}
-
-#[cfg(feature = "stm32f103")]
-impl<'a> EEPROM<'a> for stm32f1::stm32f103::FLASH {
-    #[cfg(feature = "default-eeprom")]
-    fn eeprom(&'a self) -> EEPROMController<'a, Self> {
-        let first_page_address = unsafe { &EEPROM_START } as *const u32 as usize;
+    pub fn new_default(flash: FLASH) -> EEPROM {
+        let first_page_offset = unsafe { &EEPROM_START } as *const u32 as u32;
         let page_size = unsafe { &PAGE_SIZE } as *const u32 as usize;
-        let page_count = unsafe { &EEPROM_PAGES } as *const u32 as usize;
-        EEPROMController::new(first_page_address, page_size, page_count, self)
-    }
-
-    fn eeprom_params(
-        &'a self,
-        first_page_address: usize,
-        page_size: usize,
-        page_count: usize,
-    ) -> EEPROMController<'a, Self> {
-        EEPROMController::new(first_page_address, page_size, page_count, self)
-    }
-}
-
-/// EEPROM controller. Uses Flash for implementing key-value storage for 16-bit data values.
-pub struct EEPROMController<'a, FlashT>
-where
-    FlashT: 'a,
-    FlashT: Flash,
-{
-    first_page_address: usize,
-    // Amount of items per page (full words)
-    page_items: usize,
-    page_count: usize,
-    flash: &'a FlashT,
-}
-
-impl<'a, FlashT> EEPROMController<'a, FlashT>
-where
-    FlashT: 'a,
-    FlashT: Flash,
-{
-    /// Create a new EEPROM controller to work with Flash memory abstracted by `FlashT` type.
-    pub fn new(
-        first_page_address: usize,
-        page_size: usize,
-        page_count: usize,
-        flash: &'a FlashT,
-    ) -> EEPROMController<'a, FlashT> {
-        debug_assert!(page_count >= 2,
-                      "EEPROM page count must be greater or equal to 2! Check your linker script for `_eeprom_pages`");
         debug_assert_eq!(page_size & 0x3FF, 0,
                          "EEPROM page size should be a multiple of 1K! Check your linker script for `_page_size`");
+        let sector_size = match page_size {
+            1024 => SectorSize::Sz1K,
+            2048 => SectorSize::Sz2K,
+            4096 => SectorSize::Sz4K,
+            _ => unreachable!(),
+        };
+        let page_count = unsafe { &EEPROM_PAGES } as *const u32 as u32;
+        EEPROM::new(first_page_offset, sector_size, page_count, flash)
+    }
+
+    /// Create a new EEPROM controller to work with Flash memory abstracted by `FlashT` type.
+    pub fn new(
+        first_page_offset: u32,
+        sector_size: SectorSize,
+        page_count: u32,
+        flash: FLASH,
+    ) -> EEPROM {
+        debug_assert!(page_count >= 2,
+                      "EEPROM page count must be greater or equal to 2! Check your linker script for `_eeprom_pages`");
         // Tests fake FLASH memory
         #[cfg(not(test))]
         debug_assert_eq!(
-            (first_page_address - FLASH_START) % page_size,
+            first_page_offset % (sector_bytes(sector_size) as u32),
             0,
             "EEPROM first_page pointer does not point at the beginning of the FLASH page"
         );
-        EEPROMController {
-            first_page_address,
-            page_items: page_size / ITEM_SIZE,
+        EEPROM {
+            first_page_offset,
+            page_size: sector_size,
+            page_items: sector_bytes(sector_size) / ITEM_SIZE,
             page_count,
-            flash,
+            flash: flash.constrain(),
         }
     }
 
     /// Initialize EEPROM controller. Checks that all internal data structures are in consistent
     /// state and fixes them otherwise.
-    pub fn init(&self) -> FlashResult {
-        let _unlocked = unsafe { self.flash.unlock_guard()? };
-
+    pub fn init(&mut self) -> FlashResult<()> {
         let active = self.find_active();
         for page in 0..self.page_count {
             match active {
@@ -199,11 +160,10 @@ where
     }
 
     /// Erase all values stored in EEPROM
-    pub fn erase(&self) -> FlashResult {
-        let _unlocked = unsafe { self.flash.unlock_guard()? };
-
+    pub fn erase(&mut self) -> FlashResult<()> {
         for page in 0..self.page_count {
-            self.erase_page(page)?;
+            let start_offset = self.first_page_offset + page * sector_bytes(self.page_size);
+            self.writer().page_erase(start_offset)?;
         }
 
         // Mark the first page as the active
@@ -215,7 +175,7 @@ where
     /// # Panics
     /// * panics if active page cannot be found
     /// * panics if tag value has the most significant bit set to `1` (reserved value)
-    pub fn read(&self, tag: HalfWord) -> Option<HalfWord> {
+    pub fn read(&mut self, tag: HalfWord) -> Option<HalfWord> {
         assert_eq!(tag & 0b1000_0000_0000_0000, 0, "msb bit of `1` is reserved");
 
         let page = self.find_active().expect("cannot find active page");
@@ -228,10 +188,9 @@ where
     /// * panics if active page cannot be found
     /// * panics if page is full even after compacting it to the empty one
     /// * panics if tag value has the most significant bit set to `1` (reserved value)
-    pub fn write(&self, tag: HalfWord, data: HalfWord) -> FlashResult {
+    pub fn write(&mut self, tag: HalfWord, data: HalfWord) -> FlashResult<()> {
         assert_eq!(tag & 0b1000_0000_0000_0000, 0, "msb bit of `1` is reserved");
 
-        let _unlocked = unsafe { self.flash.unlock_guard()? };
         let page = self.find_active().expect("cannot find active page");
 
         // rescue all the data to the free page first
@@ -245,7 +204,7 @@ where
         panic!("too many variables");
     }
 
-    fn rescue_if_full(&self, src_page: usize) -> Result<usize, FlashError> {
+    fn rescue_if_full(&mut self, src_page: u32) -> Result<u32, FlashError> {
         // Check if last word of the page was written or not
         // Note that we check both data and the tag as in case of failure we might write
         // data, but not the tag.
@@ -283,7 +242,7 @@ where
         Ok(tgt_page)
     }
 
-    fn search(&self, page: usize, max_item: usize, tag: HalfWord) -> Option<HalfWord> {
+    fn search(&self, page: u32, max_item: u32, tag: HalfWord) -> Option<HalfWord> {
         for item in (1..max_item).rev() {
             let (t, data) = self.read_item_tuple(page, item);
             if t == tag {
@@ -293,7 +252,7 @@ where
         None
     }
 
-    fn find_active(&self) -> Option<usize> {
+    fn find_active(&mut self) -> Option<u32> {
         for page in 0..self.page_count {
             if self.page_status(page) == ACTIVE_PAGE_MARKER {
                 return Some(page);
@@ -302,22 +261,23 @@ where
         None
     }
 
-    fn page_status(&self, page: usize) -> HalfWord {
-        unsafe { ptr::read(self.page_address(page) as *mut HalfWord) }
+    fn page_status(&mut self, page: u32) -> HalfWord {
+        let page_offset = self.page_offset(page);
+        let writer = self.writer();
+        let data = writer.read(page_offset, 2).unwrap();
+        u16::from_le_bytes([data[0], data[1]])
     }
 
-    fn set_page_status(&self, page: usize, status: HalfWord) -> FlashResult {
-        unsafe {
-            self.flash
-                .program_half_word(self.page_address(page), status)
-        }
+    fn set_page_status(&mut self, page: u32, status: HalfWord) -> FlashResult<()> {
+        let page_offset = self.page_offset(page);
+        self.writer().write(page_offset, &status.to_le_bytes())
     }
 
-    fn page_address(&self, page: usize) -> usize {
-        self.item_address(page, 0)
+    fn page_offset(&self, page: u32) -> u32 {
+        self.item_offset(page, 0)
     }
 
-    fn item_address(&self, page: usize, item: usize) -> usize {
+    fn item_offset(&self, page: u32, item: u32) -> u32 {
         debug_assert!(
             item < self.page_items,
             "item must be less than the amount of items per page"
@@ -326,21 +286,22 @@ where
             page < self.page_count,
             "page must be less than the amount of pages"
         );
-        self.first_page_address + (page * self.page_items + item) * ITEM_SIZE
+        self.first_page_offset + (page * self.page_items + item) * ITEM_SIZE
     }
 
-    fn read_item(&self, page: usize, item: usize) -> Word {
-        unsafe { ptr::read(self.item_address(page, item) as *mut Word) }
+    fn read_item(&self, page: u32, item: u32) -> Word {
+        unsafe { ptr::read(self.item_offset(page, item) as *mut Word) }
     }
 
-    fn read_item_tuple(&self, page: usize, item: usize) -> (HalfWord, HalfWord) {
+    fn read_item_tuple(&self, page: u32, item: u32) -> (HalfWord, HalfWord) {
         let item = self.read_item(page, item);
         ((item & 0xffff) as HalfWord, (item >> 16) as HalfWord)
     }
 
-    fn erase_page(&self, page: usize) -> FlashResult {
+    fn erase_page(&mut self, page: u32) -> FlashResult<()> {
         if self.is_page_dirty(page) {
-            let result = unsafe { self.flash.erase_page(self.page_address(page)) };
+            let page_offset = self.page_offset(page);
+            let result = self.writer().page_erase(page_offset);
             debug_assert!(!self.is_page_dirty(page));
             result
         } else {
@@ -348,7 +309,7 @@ where
         }
     }
 
-    fn is_page_dirty(&self, page: usize) -> bool {
+    fn is_page_dirty(&self, page: u32) -> bool {
         for item in 0..self.page_items {
             let value = self.read_item(page, item);
             if value != ERASED_ITEM {
@@ -358,13 +319,25 @@ where
         false
     }
 
-    fn program_item(&self, page: usize, pos: usize, tag: HalfWord, data: HalfWord) -> FlashResult {
-        let item_addr = self.item_address(page, pos);
-        unsafe {
-            // Not found -- write the value first, so if we fail for whatever reason,
-            // we don't have the default value of `0xffff` for the item with `tag`.
-            self.flash.program_half_word(item_addr + 2, data)?;
-            self.flash.program_half_word(item_addr, tag)
-        }
+    fn program_item(&mut self, page: u32, pos: u32, tag: HalfWord, data: HalfWord) -> FlashResult<()> {
+        let item_addr = self.item_offset(page, pos);
+
+        // Not found -- write the value first, so if we fail for whatever reason,
+        // we don't have the default value of `0xffff` for the item with `tag`.
+        self.writer().write(item_addr + 2, &data.to_le_bytes())?;
+        self.writer().write(item_addr, &tag.to_le_bytes())?;
+        Ok(())
+    }
+
+    fn writer(&mut self) -> FlashWriter {
+        self.flash.writer(self.page_size, FlashSize::Sz64K)
+    }
+}
+
+fn sector_bytes(sector_size: SectorSize) -> u32 {
+    match sector_size {
+        SectorSize::Sz1K => 1024,
+        SectorSize::Sz2K => 2048,
+        SectorSize::Sz4K => 4096,
     }
 }

@@ -3,13 +3,13 @@ use self::thread::ThreadingOperation;
 use crate::hal::{Controls, Display, EStop, QuadEncoder};
 use crate::settings;
 use rtic::Mutex;
-use stm32f1::stm32f103::FLASH;
+use eeprom::EEPROM;
 
 pub struct MenuResources<'a> {
     pub encoder: &'a mut QuadEncoder,
     pub display: &'a mut Display,
     pub controls: &'a mut Controls,
-    pub flash: &'a mut FLASH,
+    pub eeprom: &'a mut EEPROM,
     pub estop: &'a mut EStop,
     pub shared: crate::app::idle::SharedResources<'a>,
     /// Stepper driver frequency (timer ticks per second), used for calculating acceleration time for threads
@@ -20,12 +20,12 @@ impl MenuResources<'_> {
     /// Reload stepper settings from EEPROM. Sets acceleration, reverse flag and speed. Speed
     /// is set to the default traversal speed.
     fn reload_stepper_settings(&mut self) {
-        let reversed = settings::IS_REVERSED.read(self.flash) != 0;
-        let acceleration = (u32::from(settings::ACCELERATION.read(self.flash))
-            * u32::from(settings::MICROSTEPS.read(self.flash)))
+        let reversed = settings::IS_REVERSED.read(self.eeprom) != 0;
+        let acceleration = (u32::from(settings::ACCELERATION.read(self.eeprom))
+            * u32::from(settings::MICROSTEPS.read(self.eeprom)))
             << 8;
-        let traversal = u32::from(settings::TRAVERSAL.read(self.flash));
-        let steps_per_inch = settings::steps_per_inch(self.flash);
+        let traversal = u32::from(settings::TRAVERSAL.read(self.eeprom));
+        let steps_per_inch = settings::steps_per_inch(self.eeprom);
         let speed = ((traversal * steps_per_inch) << 8) / 60;
 
         self.shared.stepper.lock(|s| {
@@ -56,10 +56,12 @@ pub type SettingsMenu = SettingsMenuTemplate<7>;
 
 impl<const N: usize> MenuItem for SettingsMenuTemplate<N> {
     fn run(&mut self, r: &mut MenuResources) {
+        let mut initial = 0;
         while let Some(setting) =
-            crate::menu::util::run_selection(r, "-- Settings --", &self.settings, 0)
+            crate::menu::util::run_selection(r, "-- Settings --", &self.settings, initial)
         {
             crate::menu::util::run_setting(r, setting);
+            initial = self.settings.iter().position(|s| s.label() == setting.label()).unwrap_or(0);
         }
     }
 }

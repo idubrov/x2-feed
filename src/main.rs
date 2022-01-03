@@ -34,9 +34,9 @@ mod app {
     use crate::hal::{delay, Controls, Display, Led, QuadEncoder, RpmSensor, Screen, StepperDriverImpl, DRIVER_TICK_FREQUENCY, EStop};
     use crate::menu::{LatheMenu, MenuItem, MenuResources, MillMenu};
     use crate::stepper::Stepper;
-    use eeprom::EEPROM;
-    use stm32f1::stm32f103::{FLASH, Peripherals};
+    use stm32f1::stm32f103::{Peripherals};
     use stm32f1xx_hal::prelude::*;
+    use eeprom::EEPROM;
 
     #[shared]
     struct Shared {
@@ -50,7 +50,7 @@ mod app {
         led: Led,
         encoder: QuadEncoder,
         controls: Controls,
-        flash: FLASH,
+        eeprom: EEPROM,
         estop: EStop,
     }
 
@@ -125,6 +125,11 @@ mod app {
         gpiob.pb8.into_pull_down_input(&mut gpiob.crh);
         gpiob.pb9.into_pull_down_input(&mut gpiob.crh);
 
+        // Initialize EEPROM emulation
+        // FIXME: constants?..
+        let mut eeprom = EEPROM::new_default(peripherals.FLASH);
+        eeprom.init().unwrap();
+
         // Initialize peripherals
         let driver =
             StepperDriverImpl::new(peripherals.TIM1, step_pin, dir_pin, enable_pin, reset_pin);
@@ -132,17 +137,13 @@ mod app {
         let screen = Screen::new(rs_pin, rw_pin, e_pin, [db4, db5, db6, db7]);
         let encoder = QuadEncoder::new(peripherals.TIM3, encoder_dt_pin, encoder_clk_pin);
         let hall = RpmSensor::new(peripherals.TIM2, hall_pin);
-        let is_lathe = crate::settings::IS_LATHE.read(&peripherals.FLASH) != 0;
+        let is_lathe = crate::settings::IS_LATHE.read(&mut eeprom) != 0;
         let stepper = Stepper::new(DRIVER_TICK_FREQUENCY, driver, !is_lathe);
         let mut display = Display::new(screen);
         let controls = Controls::new(left_btn, right_btn, fast_btn, encoder_btn);
 
         // Pull-up e-stop (it's `1` when not active).
         let estop = EStop::new(gpiob.pb0.into_pull_up_input(&mut gpiob.crl).erase());
-
-        // Initialize EEPROM emulation
-        peripherals.FLASH.eeprom().init().unwrap();
-        let flash = peripherals.FLASH;
 
         // LCD device init
         // Need to wait at least 40ms after Vcc rises to 2.7V
@@ -153,7 +154,7 @@ mod app {
         (
             Shared { stepper, hall },
             Local {
-                flash,
+                eeprom,
                 display,
                 led,
                 encoder,
@@ -164,19 +165,19 @@ mod app {
         )
     }
 
-    #[idle(local = [led, encoder, controls, display, flash, estop], shared = [stepper, hall])]
+    #[idle(local = [led, encoder, controls, display, eeprom, estop], shared = [stepper, hall])]
     fn idle(context: idle::Context) -> ! {
         let mut r = MenuResources {
             encoder: context.local.encoder,
             display: context.local.display,
             controls: context.local.controls,
-            flash: context.local.flash,
+            eeprom: context.local.eeprom,
             shared: context.shared,
             estop: context.local.estop,
             driver_freq: DRIVER_TICK_FREQUENCY,
         };
 
-        let is_lathe = crate::settings::IS_LATHE.read(r.flash) != 0;
+        let is_lathe = crate::settings::IS_LATHE.read(r.eeprom) != 0;
         if is_lathe {
             let mut menu = LatheMenu::new();
             loop {
