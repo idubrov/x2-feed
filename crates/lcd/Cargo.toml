@@ -1,8 +1,0 @@
-[package]
-description = "Hitachi HD44780-compatible LCD screen support for embedded development"
-name = "lcd"
-version = "0.5.0-alpha"
-edition = "2021"
-
-[dev-dependencies]
-pretty_assertions = "1.0.0"

@@ -1,8 +1,0 @@
-[package]
-description = "Stepper motor speed ramp generator"
-name = "stepgen"
-version = "0.2.0-alpha"
-exclude = [
-    "docs/*"
-]
-edition = "2021"
