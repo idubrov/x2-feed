@@ -17,6 +17,7 @@ jobs:
           profile: minimal
           toolchain: stable
           components: rustfmt, clippy
+          target: thumbv7m-none-eabi
       - name: Annotate commit with clippy warnings
         uses: actions-rs/clippy-check@v1
         with:
