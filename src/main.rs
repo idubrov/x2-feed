@@ -30,13 +30,16 @@ mod threads;
 
 #[rtic::app(device = stm32f1::stm32f103, peripherals = true)]
 mod app {
-    use crate::hal::{delay, Controls, Display, EStop, Led, QuadEncoder, RpmSensor, Screen, StepperDriverImpl, DRIVER_TICK_FREQUENCY, EEPROM_PARAMS};
+    use crate::hal::{
+        delay, Controls, Display, EStop, Led, QuadEncoder, RpmSensor, Screen, StepperDriverImpl,
+        DRIVER_TICK_FREQUENCY, EEPROM_PARAMS,
+    };
     use crate::menu::{LatheMenu, MenuItem, MenuResources, MillMenu};
     use crate::stepper::Stepper;
     use eeprom::EEPROMExt;
     use stm32f1::stm32f103::Peripherals;
-    use stm32f1xx_hal::prelude::*;
     use stm32f1xx_hal::flash;
+    use stm32f1xx_hal::prelude::*;
 
     #[shared]
     struct Shared {

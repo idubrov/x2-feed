@@ -1,6 +1,6 @@
-use stm32f1xx_hal::flash::{self, Result as FlashResult};
-use eeprom::EEPROMExt;
 use crate::hal::EEPROM_PARAMS;
+use eeprom::EEPROMExt;
+use stm32f1xx_hal::flash::{self, Result as FlashResult};
 
 #[derive(Clone, Copy)]
 pub struct Setting {
@@ -34,14 +34,16 @@ impl Setting {
 
     pub fn read(&self, flash: &mut flash::Parts) -> u16 {
         flash
-          .eeprom(EEPROM_PARAMS)
+            .eeprom(EEPROM_PARAMS)
             .read(self.tag)
             .map(|v| v.max(self.min).min(self.max))
             .unwrap_or(self.default)
     }
 
     pub fn write(&self, flash: &mut flash::Parts, value: u16) -> FlashResult<()> {
-        flash.eeprom(EEPROM_PARAMS).write(self.tag, value.max(self.min).min(self.max))
+        flash
+            .eeprom(EEPROM_PARAMS)
+            .write(self.tag, value.max(self.min).min(self.max))
     }
 
     pub fn label(&self) -> &'static str {
