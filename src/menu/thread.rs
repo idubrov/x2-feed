@@ -193,8 +193,8 @@ impl core::fmt::Display for ThreadSystem {
 }
 
 fn select_thread_size(r: &mut MenuResources) -> Option<ThreadSize> {
-    const INCH_THREADS: [u16; 20] = [
-        4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24, 32, 40, 48, 56, 64,
+    const INCH_THREADS: [u16; 21] = [
+        4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24, 28, 32, 40, 48, 56, 64,
     ];
     const METRIC_THREADS: [u16; 20] = [
         35, 40, 45, 50, 60, 70, 80, 100, 125, 150, 175, 200, 250, 300, 350, 400, 450, 500, 550, 600,
