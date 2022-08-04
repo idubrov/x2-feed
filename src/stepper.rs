@@ -200,7 +200,7 @@ impl<S: StepperDriver> Stepper<S> {
             is_cutting_thread: self.state == State::ThreadDelay,
         };
         self.stepgen
-            .set_target_step(self.base_step + (delta.abs() as u32))?;
+            .set_target_step(self.base_step + delta.unsigned_abs())?;
 
         // Set direction and enable driver outputs
         let dir_bit = match dir {
