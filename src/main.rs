@@ -75,11 +75,11 @@ mod app {
         let rcc = peripherals.RCC.constrain();
         let _clocks = rcc
             .cfgr
-            .use_hse(8.mhz())
-            .sysclk(72.mhz())
-            .pclk1(36.mhz())
-            .pclk2(72.mhz())
-            .hclk(72.mhz())
+            .use_hse(8.MHz())
+            .sysclk(72.MHz())
+            .pclk1(36.MHz())
+            .pclk2(72.MHz())
+            .hclk(72.MHz())
             .freeze(&mut flash.acr);
 
         // We use our own timer which keeps syst running (since we also use it for measuring delays)
