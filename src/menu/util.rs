@@ -78,7 +78,7 @@ pub fn run_setting(r: &mut MenuResources, setting: &settings::Setting) {
 /// How long "Select" button needs to be pressed to be interpreted as "exit current menu"
 const EXIT_DURATION_US: u32 = 1_500_000;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NavStatus {
     Exit,
     Select,

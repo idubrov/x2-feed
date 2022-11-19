@@ -1,13 +1,13 @@
 use crate::hal::StepperDriver;
 
 /// Direction of stepper motor movement
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Direction {
     Left,
     Right,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum State {
     /// Not stepping
     Stopped,
