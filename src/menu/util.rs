@@ -138,7 +138,7 @@ impl core::fmt::Display for PrintablePosition {
         } else {
             self.steps_per_inch / 2
         };
-        let thousands = (1000 * self.position + bias) / (self.steps_per_inch as i32);
+        let thousands = (1000 * self.position + bias) / self.steps_per_inch;
         let inches = thousands / 1000;
         let thousands = thousands % 1000;
         let sign = if thousands < 0 { "-" } else { "" };
